@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Database, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { classApi, questionApi } from "../../services/api";
 import { Field, Modal, PageTitle } from "../../components/common";
-import { Loading } from "../../components/Feedback";
+import { SkeletonList } from "../../components/Feedback";
 import { questionDimensionLabel } from "../../app/taxonomy";
 
 /** 单个班级的管理面板：邀请码、成员、班级题库。 */
@@ -342,7 +342,7 @@ export function TeacherClassesPage({ notify }) {
       )}
 
       {loading ? (
-        <Loading text="正在加载班级…" />
+        <SkeletonList rows={3} columns={2} />
       ) : items.length ? (
         <>
           <div className="class-switcher">

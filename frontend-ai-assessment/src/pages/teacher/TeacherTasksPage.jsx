@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { classApi, questionApi, taskApi, teacherApi } from "../../services/api";
 import { Field, Modal, PageTitle } from "../../components/common";
+import { SkeletonStats } from "../../components/Feedback";
 import { ScopeBody } from "../../components/PointPicker";
 import { findGroup, pointNames } from "../../app/taxonomy";
 
@@ -334,24 +335,28 @@ export function TeacherTasksPage({ notify }) {
 
       {tasks.length ? (
         <>
-          <section className="task-metrics">
-            <article>
-              <ClipboardList />
-              <span>已发布任务<b>{metricsLoading ? "—" : metrics.tasks}</b></span>
-            </article>
-            <article>
-              <Play />
-              <span>进行中任务<b>{metricsLoading ? "—" : metrics.running}</b></span>
-            </article>
-            <article>
-              <UsersRound />
-              <span>参与学生<b>{metricsLoading ? "—" : metrics.students}</b></span>
-            </article>
-            <article>
-              <Gauge />
-              <span>平均完成率<b>{metricsLoading ? "—" : `${metrics.completion}%`}</b></span>
-            </article>
-          </section>
+          {metricsLoading ? (
+            <SkeletonStats count={4} />
+          ) : (
+            <section className="task-metrics">
+              <article>
+                <ClipboardList />
+                <span>已发布任务<b>{metrics.tasks}</b></span>
+              </article>
+              <article>
+                <Play />
+                <span>进行中任务<b>{metrics.running}</b></span>
+              </article>
+              <article>
+                <UsersRound />
+                <span>参与学生<b>{metrics.students}</b></span>
+              </article>
+              <article>
+                <Gauge />
+                <span>平均完成率<b>{metrics.completion}%</b></span>
+              </article>
+            </section>
+          )}
           <div className="task-list">
           {tasks.map((task) => (
             <div className="task-row" key={task.id}>

@@ -2509,6 +2509,60 @@ td small {
   background: #b42318;
 }
 
+/* 列表骨架屏：布局先占位，数据回来就地替换，页面不会跳一下 */
+.skeleton {
+  display: grid;
+  gap: 0;
+}
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.skeleton-bar {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    #f0ede8 25%,
+    #f7f5f1 37%,
+    #f0ede8 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+.skeleton-bar:first-child {
+  height: 15px;
+}
+.skeleton-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.skeleton-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px 16px;
+  border: 1px solid #efe8dc;
+  border-radius: 14px;
+  background: #fff;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+@media (max-width: 900px) {
+  .skeleton-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* 窄屏：侧边栏收成抽屉，汉堡按钮才真正有用 */
 .sidebar-mask {
   position: fixed;

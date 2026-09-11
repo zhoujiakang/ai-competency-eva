@@ -10,7 +10,10 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class AuthInterceptor implements HandlerInterceptor {
     @Override public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String uri = request.getRequestURI();
-        if (uri.startsWith("/api/auth/") || "OPTIONS".equalsIgnoreCase(request.getMethod())) return true;
+        // /api/auth/** 是登录注册本身；/api/client-logs 是前端错误上报——
+        // 登录页出错时还没有令牌，所以这两个都必须放行。
+        if (uri.startsWith("/api/auth/") || uri.startsWith("/api/client-logs")
+                || "OPTIONS".equalsIgnoreCase(request.getMethod())) return true;
         StpUtil.checkLogin();
         return true;
     }

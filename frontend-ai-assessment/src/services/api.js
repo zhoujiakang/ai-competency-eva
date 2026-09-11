@@ -78,6 +78,25 @@ export const post = (path, body) =>
 export const put = (path, body) =>
   request(path, { method: "PUT", body: JSON.stringify(body) });
 
+/**
+ * 前端错误上报：发到 /api/client-logs，由后端写进服务端日志。
+ *
+ * 用 keepalive 是为了页面崩溃/跳转途中也能发出去；失败一律静默——
+ * 上报本身绝不能再给用户添一个错误。
+ */
+export function reportClientLog(payload) {
+  try {
+    fetch(`${API_BASE}/client-logs`, {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  } catch {
+    // 忽略：上报失败不影响任何功能
+  }
+}
+
 export const authApi = {
   login: (payload) => post("/auth/login", payload),
   register: (role, payload) => post(`/auth/register/${role}`, payload),

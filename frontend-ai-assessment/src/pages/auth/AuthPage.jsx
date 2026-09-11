@@ -8,6 +8,7 @@ export function AuthPage({ mode, role, back, register, onLogin, notify }) {
   const [form, setForm] = useState({
     account: "",
     password: "",
+    confirmPassword: "",
     name: "",
     nickname: "",
     phone: "",
@@ -34,6 +35,8 @@ export function AuthPage({ mode, role, back, register, onLogin, notify }) {
     if (!form.password) next.password = "请输入密码";
     else if (/[\u3400-\u9fff]/.test(form.password)) next.password = "密码不能包含中文";
     if (mode === "register") {
+      if (form.password && form.password !== form.confirmPassword)
+        next.confirmPassword = "两次输入的密码不一致";
       if (!form.name.trim()) next.name = "请输入姓名";
       if (!form.nickname.trim()) next.nickname = "请输入昵称";
       if (form.phone.trim() && !/^\d{11}$/.test(form.phone.trim()))
@@ -61,7 +64,15 @@ export function AuthPage({ mode, role, back, register, onLogin, notify }) {
         saveToken(data.tokenValue);
         onLogin(data.user, role);
       } else {
-        await authApi.register(role, form);
+        // 只提交后端认识的字段（确认密码、组织码都不是注册接口的参数）
+        await authApi.register(role, {
+          account: form.account.trim(),
+          password: form.password,
+          name: form.name.trim(),
+          nickname: form.nickname.trim(),
+          phone: form.phone.trim(),
+          email: form.email.trim(),
+        });
         // 注册成功后先完成登录拿到令牌——加入班级（join）需要登录态。
         const data = await authApi.login({
           account: form.account,
@@ -165,6 +176,15 @@ export function AuthPage({ mode, role, back, register, onLogin, notify }) {
             {mode === "register" && (
               <>
                 <Field
+                  label="确认密码"
+                  type="password"
+                  value={form.confirmPassword}
+                  onChange={(value) => update("confirmPassword", value)}
+                  required
+                  error={errors.confirmPassword}
+                  autoComplete="new-password"
+                />
+                <Field
                   label="手机号"
                   value={form.phone}
                   onChange={(value) => update("phone", value)}
@@ -201,12 +221,6 @@ export function AuthPage({ mode, role, back, register, onLogin, notify }) {
           <div className="auth-foot">
             {mode === "login" ? (
               <>
-                <button
-                  className="text-btn"
-                  onClick={() => notify("忘记密码功能暂未开放", "info")}
-                >
-                  忘记密码？
-                </button>
                 <button className="text-btn" onClick={register}>
                   注册新账号
                 </button>

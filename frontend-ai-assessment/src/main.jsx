@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { installGlobalErrorReporting, reportError } from "./app/reporting";
 import "./styles.css";
 
 class AppErrorBoundary extends React.Component {
@@ -12,6 +13,8 @@ class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error) {
     console.error("前端运行错误", error);
+    // 渲染崩溃也要留痕：用户只会说"白屏了"，日志里得有堆栈
+    reportError(error, { kind: "render" });
   }
 
   render() {
@@ -27,6 +30,9 @@ class AppErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+
+// 未捕获的运行时错误与 Promise 拒绝，统一上报到后端日志
+installGlobalErrorReporting();
 
 createRoot(document.getElementById("root")).render(
   <AppErrorBoundary>

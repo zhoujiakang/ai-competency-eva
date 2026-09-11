@@ -65,3 +65,43 @@ export function ErrorState({ message, onRetry, retryText = "重新加载" }) {
     </div>
   );
 }
+
+/**
+ * 列表骨架屏。
+ *
+ * 比一句"正在加载…"更接近最终形态：布局先占好位，数据回来时就地替换，
+ * 页面不会跳一下，用户也不会把"还没加载完"看成"没有数据"。
+ * 纯装饰，对读屏软件隐藏。
+ */
+export function SkeletonList({ rows = 4, columns = 3 }) {
+  const widths = ["42%", "18%", "12%", "10%"];
+  return (
+    <div className="skeleton skeleton-list" aria-hidden="true">
+      {Array.from({ length: rows }).map((_, rowIndex) => (
+        <div className="skeleton-row" key={rowIndex}>
+          {Array.from({ length: columns }).map((__, columnIndex) => (
+            <span
+              className="skeleton-bar"
+              key={columnIndex}
+              style={{ width: widths[columnIndex] || "12%" }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 指标卡骨架：教师端任务页顶部那四个数字。 */
+export function SkeletonStats({ count = 4 }) {
+  return (
+    <div className="skeleton skeleton-stats" aria-hidden="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <div className="skeleton-card" key={index}>
+          <span className="skeleton-bar" style={{ width: "58%" }} />
+          <span className="skeleton-bar" style={{ width: "32%" }} />
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Copy, Eye, Plus } from "lucide-react";
 import { questionApi } from "../../services/api";
 import { Modal, PageTitle } from "../../components/common";
-import { Loading } from "../../components/Feedback";
+import { SkeletonList } from "../../components/Feedback";
 import { EMPTY_QUESTION_FORM, QuestionForm } from "./QuestionForm";
 import {
   questionAssessmentPoints,
@@ -155,7 +155,7 @@ export function TeacherQuestionsPage({ notify }) {
       )}
 
       {loading ? (
-        <Loading text="正在加载题库…" />
+        <SkeletonList rows={5} columns={4} />
       ) : showPublic ? (
         <div className="table-wrap">
           <table className="table-fixed">

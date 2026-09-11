@@ -3,7 +3,7 @@ import { ArrowRight, BookOpen, FileCheck2, Gauge, GraduationCap, Users } from "l
 import { classApi, taskApi, assessmentApi } from "../../services/api";
 import { readSelectedClass, writeCurrentAssessment, writeSelectedClass } from "../../app/storage";
 import { PageTitle } from "../../components/common";
-import { ErrorState, Loading } from "../../components/Feedback";
+import { ErrorState, SkeletonList } from "../../components/Feedback";
 import { useSelectedClass } from "../../components/AbilityOverview";
 
 export function StudentClassesPage({ go, notify }) {
@@ -66,7 +66,7 @@ export function StudentClassesPage({ go, notify }) {
         }
       />
       {loading ? (
-        <Loading text="正在加载班级…" />
+        <SkeletonList rows={3} columns={2} />
       ) : error ? (
         <ErrorState message={error} onRetry={load} />
       ) : classes.length ? (
@@ -177,7 +177,7 @@ export function StudentTasksPage({ go, notify }) {
         desc="老师布置的任务只需完成一次，完成后可以随时回来查看报告。"
       />
       {loading ? (
-        <Loading text="正在加载任务…" />
+        <SkeletonList rows={3} columns={3} />
       ) : error ? (
         <ErrorState message={error} onRetry={load} />
       ) : rows.length ? (
@@ -287,7 +287,7 @@ export function RecordsPage({ go, notify }) {
         </button>
       </div>
       {loading ? (
-        <Loading text="正在加载测评记录…" />
+        <SkeletonList rows={4} columns={3} />
       ) : error ? (
         <ErrorState message={error} onRetry={load} />
       ) : (filter === "all"
@@ -442,7 +442,9 @@ export function ReportsPage({ go, notify }) {
         </div>
       </div>
 
-      {visible.length ? (
+      {loading ? (
+        <SkeletonList rows={3} columns={3} />
+      ) : visible.length ? (
         <div className="record-list">
           {visible.map((row) => (
             <div className="record-row" key={row.id}>
@@ -471,8 +473,8 @@ export function ReportsPage({ go, notify }) {
       ) : (
         <div className="large-empty">
           <FileCheck2 size={30} />
-          <h3>{loading ? "正在加载报告…" : "还没有报告"}</h3>
-          <p>{loading ? "稍等一下" : "完成一次测评或练习后，报告会出现在这里。"}</p>
+          <h3>还没有报告</h3>
+          <p>完成一次测评或练习后，报告会出现在这里。</p>
         </div>
       )}
     </div>
