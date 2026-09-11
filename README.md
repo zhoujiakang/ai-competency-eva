@@ -66,6 +66,30 @@ docker compose down                    # 停止（保留数据）
 docker compose down -v                 # 停止并删除数据库数据（危险）
 ```
 
+### 更新已部署的服务器
+
+开发机（本机）执行一条命令即可完成「构建 → 上传 → 重启 → 自检」：
+
+```bash
+./deploy/release.sh            # 全量：后端 + 前端 + Agent
+./deploy/release.sh frontend   # 只发前端（改页面/样式时最快）
+./deploy/release.sh backend    # 只发后端
+./deploy/release.sh agent      # 只发 Agent
+```
+
+脚本默认目标是 `root@120.26.93.206`、应用目录 `/opt/ai-assessment`，可用环境变量覆盖：
+
+```bash
+SERVER=root@其他服务器 APP_DIR=/opt/xxx ./deploy/release.sh
+```
+
+**为什么在本机构建、上传产物**：那台服务器只有 2 核 1.6G 内存，跑 Maven / npm 构建
+容易把内存吃满，一旦 OOM，同机上的静态页也会跟着挂。所以构建放在本机，服务器只接产物。
+
+脚本做的事：构建并上传后端 jar、前端 `dist`、Agent 源码（依赖有变化才重装 venv），
+重启两个 systemd 服务，最后自检「应用首页 / 朋友的静态页 / 接口代理」三项。
+它不会碰 `/photoelectric/`，也不会覆盖服务器上的 `.env`。
+
 数据都在命名卷 `assessment-mysql` / `assessment-redis` 里，`down` 不会丢；
 `down -v` 才会删。备份用：
 
