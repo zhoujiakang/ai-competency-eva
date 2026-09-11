@@ -208,7 +208,10 @@ p {
   max-width: 250px;
 }
 .auth-page {
-  min-height: 100vh;
+  /* 固定视口高度，两栏各自独立：
+     左边品牌区不动，只有右边的表单区滚动（注册表单很长时会用到）。 */
+  height: 100vh;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
@@ -218,6 +221,11 @@ p {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  height: 100vh;
+  /* 正常情况下不滚动；只有视口特别矮、内容实在放不下时才自己滚，
+     避免被 overflow:hidden 裁掉 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .auth-side h1 {
   font-size: 56px;
@@ -233,6 +241,10 @@ p {
 .auth-card-wrap {
   padding: 45px 11%;
   position: relative;
+  height: 100vh;
+  /* 这里才是滚动容器 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .back-link {
   color: #666;
