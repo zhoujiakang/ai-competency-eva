@@ -298,21 +298,38 @@ flowchart TD
 
 ### 4.4 流式是怎么出去的
 
-`agent_turn` 是 LangGraph 节点，节点里通过 `get_stream_writer()` 拿到一个写入器：
+节点要把「AI 说的这句话」逐字推给前端，走的是我们自己的流式通道
+（`app/agent/streaming.py`），只有两个函数：
 
-```python
-writer({"delta": chunk})        # 节点内部
+```mermaid
+flowchart LR
+    S["AssessmentAgent.stream()"] -->|"with capture_deltas(write)"| G["对话图 → agent_turn 节点"]
+    G -->|"emit(片段)"| Q["队列"]
+    Q -->|"一边消费一边 yield"| B["浏览器：真·逐字输出"]
 ```
 
-外层用 `astream(..., stream_mode=["custom", "values"])` 消费：
+- 节点里：`emit("AI 说的下一小段")`
+- 调用方：`capture_deltas(writer)` 圈定接收范围，图跑在独立任务里，边写边消费
+- 没有写入器时 `emit` 静默丢弃，所以节点可以被单元测试直接调用
 
-| 模式 | 内容 | 用途 |
+**为什么不用 LangGraph 自带的 `get_stream_writer()`。** 它依赖 LangGraph 内部的一个
+contextvar，而这个变量在 **Python 3.10 下传不进图节点**（3.11 及以上才正常）：节点第一行
+就抛 `Called get_config outside of a runnable context`，学生端只看到一个 error 事件。
+
+这个坑是在服务器上踩到的，排查时极具误导性：
+
+| 环境 | Python | 结果 |
 |---|---|---|
-| `custom` | 节点主动写出的 `{"delta": ...}` | 逐字转发给前端 |
-| `values` | 跑完后的完整状态 | 取 `reply` / `action` 组装响应 |
+| 开发机 | 3.14 | ✅ |
+| Docker 镜像 | 3.12 | ✅ |
+| 服务器（Ubuntu 22.04 自带） | 3.10 | ❌ |
 
-**这也是对话图不能删的原因**：`get_stream_writer()` 必须在图节点里才拿得到，
-图在这里同时承担了「节点容器」和「流式通道」两个角色。
+而且两边的 `pip freeze` **逐行一致**（`langgraph==1.2.11` 等），所以一开始会误以为是
+依赖漂移或部署问题。真正的验证方法是在服务器上做一个最小复现：让图节点分别读
+「自己的 contextvar」和「LangGraph 的 writer」——前者能读到、后者抛错，问题就锁定在
+LangGraph 那个变量的传播上。换成自己的 contextvar 后与 Python 版本无关。
+
+`tests/test_streaming.py` 里有一条专门的回归用例：**在图节点里读自己的 writer 必须能读到**。
 
 ### 4.5 评分为什么没有图
 

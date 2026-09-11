@@ -7,26 +7,25 @@ from app.agent.actions import ASK_FOLLOWUP, NEXT_QUESTION
 from app.agent.dialogue import FALLBACK_CLOSING, agent_turn_node, looks_like_json
 from app.agent.prompts import CLOSING_SYSTEM, DECISION_SYSTEM, DIALOGUE_SYSTEM
 from app.agent.state import DialogueState
+from app.agent.streaming import capture_deltas
 from app.domain.schemas import Message
 from tests.support import FakeLlmClient, decision_prompt, dialogue_state, settings
 
 
 def run_node(llm, state, max_topic_turns=6):
-    """跑一次节点，收下通过 custom 通道发出的流式片段和最终状态。
+    """跑一次节点，收下流式片段和最终状态。
 
-    get_stream_writer() 只在图的执行上下文里可用，所以把节点放进一张最小的图里跑。
+    片段通过 app.agent.streaming 的 contextvar 出来，所以这里模拟调用方的做法：
+    用 capture_deltas 把片段收进列表，再跑节点。
     """
     async def run():
         graph = StateGraph(DialogueState)
         graph.add_node("node", agent_turn_node(llm, settings(max_topic_turns=max_topic_turns)))
         graph.add_edge(START, "node")
         graph.add_edge("node", END)
-        chunks, final = [], None
-        async for mode, data in graph.compile().astream(state, stream_mode=["custom", "values"]):
-            if mode == "custom":
-                chunks.append(data["delta"])
-            else:
-                final = data
+        chunks = []
+        with capture_deltas(chunks.append):
+            final = await graph.compile().ainvoke(state)
         return "".join(chunks), final
 
     return anyio.run(run)

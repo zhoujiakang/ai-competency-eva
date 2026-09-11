@@ -31,12 +31,11 @@
 import logging
 import time
 
-from langgraph.config import get_stream_writer
-
 from app.agent.actions import ASK_FOLLOWUP, NEXT_QUESTION, TURN_TOOLS
 from app.agent.completion import forced_action
 from app.agent.prompts import CLOSING_SYSTEM, DECISION_SYSTEM, DIALOGUE_SYSTEM, TURN_USER
 from app.agent.state import DialogueState
+from app.agent.streaming import emit
 from app.agent.transcript import render_history, render_points
 from app.core.config import Settings
 from app.llm.client import LlmClient
@@ -91,7 +90,7 @@ async def _decide(llm: LlmClient, state: DialogueState) -> str:
     return action
 
 
-async def _stream_reply(llm: LlmClient, writer, system: str, user: str) -> tuple[str, bool]:
+async def _stream_reply(llm: LlmClient, system: str, user: str) -> tuple[str, bool]:
     """流式跑一次发言，返回 (正文, 是否已经说给学生听)。"""
     collected: list[str] = []
     emitted = False
@@ -105,27 +104,27 @@ async def _stream_reply(llm: LlmClient, writer, system: str, user: str) -> tuple
                 continue
             if looks_like_json(joined):
                 break
-            writer({"delta": joined})
+            emit(joined)
             emitted = True
         else:
-            writer({"delta": chunk})
+            emit(chunk)
 
     text = "".join(collected).strip()
     if not emitted and text and not looks_like_json(text):
         # 回复很短（例如"好的。"），没触发安全检查，这里补发一次
-        writer({"delta": text})
+        emit(text)
         emitted = True
 
     return text, emitted
 
 
-async def _speak(llm: LlmClient, writer, state: DialogueState, action: str) -> tuple[str, int, str]:
+async def _speak(llm: LlmClient, state: DialogueState, action: str) -> tuple[str, int, str]:
     """发言轮：按动作选提示词，把最终那句话流式发出去。"""
     system = (CLOSING_SYSTEM if action == NEXT_QUESTION else DIALOGUE_SYSTEM).substitute()
     user = _user_text(state)
 
     for attempt in range(1, MAX_REPLY_ATTEMPTS + 1):
-        text, emitted = await _stream_reply(llm, writer, system, user)
+        text, emitted = await _stream_reply(llm, system, user)
         if text and not looks_like_json(text):
             return text, attempt, ""
         logger.warning("reply unusable action=%s, retrying: %s", action, text[:40])
@@ -135,7 +134,7 @@ async def _speak(llm: LlmClient, writer, state: DialogueState, action: str) -> t
 
     if action == NEXT_QUESTION:
         # 本题已经决定结束，不能因为一次输出失败把学生卡住
-        writer({"delta": FALLBACK_CLOSING})
+        emit(FALLBACK_CLOSING)
         return FALLBACK_CLOSING, MAX_REPLY_ATTEMPTS, ""
 
     return "", MAX_REPLY_ATTEMPTS, "模型输出不可用（空回复或被 JSON 包裹）"
@@ -145,7 +144,6 @@ def agent_turn_node(llm: LlmClient, settings: Settings):
     """一个回合：决策 → 发言。"""
 
     async def run(state: DialogueState) -> dict:
-        writer = get_stream_writer()
         started = time.perf_counter()
 
         # 保险零：确定性规则命中 → 本题必须结束，连决策轮都省掉
@@ -156,7 +154,7 @@ def agent_turn_node(llm: LlmClient, settings: Settings):
         else:
             logger.debug("deterministic rule forces %s topic=%s", action, state.get("topic"))
 
-        reply, attempts, error = await _speak(llm, writer, state, action)
+        reply, attempts, error = await _speak(llm, state, action)
         logger.debug(
             "turn done topic=%s action=%s attempts=%d chars=%d elapsed=%.2fs",
             state.get("topic"), action, attempts, len(reply), time.perf_counter() - started,

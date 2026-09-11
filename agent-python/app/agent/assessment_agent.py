@@ -19,12 +19,14 @@
 （AssessmentFlow._owned），不重复验登录态。
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 
 from app.agent.actions import ASK_FOLLOWUP
 from app.agent.graphs import build_dialogue_graph
 from app.agent.state import DialogueState
+from app.agent.streaming import capture_deltas
 from app.core.config import Settings
 from app.core.exceptions import ModelReplyError
 from app.domain.schemas import DialogueRequest, DialogueResponse
@@ -76,18 +78,30 @@ class AssessmentAgent:
         return self._to_response(final)
 
     async def stream(self, request: DialogueRequest) -> AsyncIterator[tuple[str, object]]:
-        """流式：把图上节点的 custom 片段转成 delta，最后给一个 done。
+        """流式：节点说一句就 yield 一句，最后给一个 done。
+
+        图的运行放在一个独立任务里，节点通过 streaming.emit() 把片段写进队列，
+        这里一边消费队列一边往外 yield——所以浏览器侧是真·逐字输出，而不是等整段生成完。
 
         done 交出去的是 **DialogueResponse 对象**，不是 JSON 字符串——
         序列化是传输层的事（见 app/api/routes/agent.py），内部调用方（流程层）
         不需要为了拿一个字段先把它解析回来。
         """
-        final: DialogueState | None = None
-        async for mode, payload in self.dialogue_graph.astream(
-            self._dialogue_state(request), stream_mode=["custom", "values"]
-        ):
-            if mode == "custom":
-                yield "delta", payload["delta"]
-            else:
-                final = payload
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def run_graph() -> DialogueState:
+            try:
+                with capture_deltas(queue.put_nowait):
+                    return await self.dialogue_graph.ainvoke(self._dialogue_state(request))
+            finally:
+                queue.put_nowait(None)  # 结束哨兵：无论成功还是异常都要放
+
+        task = asyncio.create_task(run_graph())
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield "delta", chunk
+
+        final = await task  # 图里的异常在这里抛出，交给上层处理
         yield "done", self._to_response(final)

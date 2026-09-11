@@ -4,19 +4,18 @@ import anyio
 
 from app.agent.actions import ASK_FOLLOWUP, NEXT_QUESTION
 from app.agent.graphs import build_dialogue_graph
+from app.agent.streaming import capture_deltas
 from tests.support import FakeLlmClient, dialogue_state, settings
 
 
 def run_graph(llm):
+    """跑一次对话图，返回（流出去的发言片段, 最终状态）。"""
     graph = build_dialogue_graph(llm, settings())
 
     async def run():
-        chunks, final = [], None
-        async for mode, data in graph.astream(dialogue_state(), stream_mode=["custom", "values"]):
-            if mode == "custom":
-                chunks.append(data["delta"])
-            else:
-                final = data
+        chunks = []
+        with capture_deltas(chunks.append):
+            final = await graph.ainvoke(dialogue_state())
         return "".join(chunks), final
 
     return anyio.run(run)
