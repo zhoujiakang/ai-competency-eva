@@ -1,26 +1,76 @@
 import { readToken, saveToken, clearSession } from "../app/storage";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+/**
+ * 接口地址：
+ *   · 开发（npm run dev）默认连本机 8080；
+ *   · 生产构建默认走同源 `/api`（由 nginx 反代），**不写死域名**——
+ *     否则忘了设 VITE_API_BASE 时，产物会指向 localhost:8080，
+ *     部署到服务器后浏览器连的是访问者自己的电脑，表现为"网络连接失败"。
+ *   · 需要直连别的域名时用 VITE_API_BASE 覆盖。
+ */
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  (import.meta.env.DEV ? "http://localhost:8080/api" : "/api");
+const DEFAULT_TIMEOUT = 20000;
+
+/**
+ * 让界面能反映真实的后端可达性：任何请求成功算「在线」，网络层失败算「异常」。
+ * Shell 顶部的状态灯订阅这个事件——之前那里写死「系统运行中」，后端挂了也照样显示绿灯。
+ */
+const reportStatus = (online) =>
+  window.dispatchEvent(
+    new CustomEvent("api-status", { detail: online ? "online" : "offline" }),
+  );
 
 export async function request(path, options = {}) {
   const token = readToken();
-  const response = await fetch(API_BASE + path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: token } : {}),
-      ...(options.headers || {}),
-    },
-  });
-  const body = await response.json().catch(() => ({ message: "网络异常" }));
-  if (response.status === 401 || body.code === 401) {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    options.timeout ?? DEFAULT_TIMEOUT,
+  );
+  let response;
+  try {
+    response = await fetch(API_BASE + path, {
+      ...options,
+      signal: options.signal ?? controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: token } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    // 请求根本没到服务器：超时或断网。给一句人话，而不是让按钮一直转圈。
+    reportStatus(false);
+    throw new Error(
+      error?.name === "AbortError"
+        ? "请求超时，请稍后重试"
+        : "网络连接失败，请检查网络后重试",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  reportStatus(true);
+
+  const body = await response
+    .json()
+    .catch(() => ({ message: "服务返回了无法解析的内容" }));
+  // 401 的含义分两种，别混：
+  //   · 登录接口自己返回 401 = 账号或密码错误，要原样告诉用户；
+  //   · 带着令牌请求却收到 401 = 登录态失效，才清会话、回登录页。
+  const isAuthCall = path.startsWith("/auth/");
+  const unauthorized = response.status === 401 || body.code === 401;
+  if (unauthorized && !isAuthCall && token) {
     saveToken();
     clearSession();
-    window.location.reload();
+    // 交给 App 统一处理：提示一句「登录已过期」再回到登录页。
+    // 这里不再直接 reload——刷新会把提示一起冲掉，用户只会莫名其妙回到首页。
+    window.dispatchEvent(new CustomEvent("session-expired"));
     throw new Error("登录已过期，请重新登录");
   }
   if (!response.ok || (body.code && body.code !== 200))
-    throw new Error(body.message || "请求失败");
+    throw new Error(body.message || `请求失败（${response.status}）`);
   return body.data ?? body;
 }
 export const post = (path, body) =>

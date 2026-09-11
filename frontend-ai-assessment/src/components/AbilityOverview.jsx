@@ -3,6 +3,7 @@ import { Compass } from "lucide-react";
 import { classApi, questionApi } from "../services/api";
 import { readSelectedClass } from "../app/storage";
 import { pointDescription, pointName } from "../app/taxonomy";
+import { ErrorState, Loading } from "./Feedback";
 import {
   AbilityCompare,
   PointDetail,
@@ -34,6 +35,10 @@ export function useAbilityData(classroom, notify) {
   const [taxonomy, setTaxonomy] = useState([]);
   const [ability, setAbility] = useState(null);
   const [loading, setLoading] = useState(false);
+  // 区分「加载失败」与「本班还没有测评」：两者表面都是"没有数据"，
+  // 但给用户的解释完全不同（一个是系统问题，一个是他还没考）
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     questionApi.taxonomy().then(setTaxonomy).catch(() => setTaxonomy([]));
@@ -46,19 +51,21 @@ export function useAbilityData(classroom, notify) {
     }
     let active = true;
     setLoading(true);
+    setError("");
     classApi
       .myAbility(classroom.id)
       .then((data) => active && setAbility(data))
       .catch((error) => {
         if (!active) return;
         setAbility(null);
-        notify?.(error.message);
+        setError(error.message || "能力数据加载失败");
+        notify?.(error, "error");
       })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [classroom?.id]);
+  }, [classroom?.id, reloadKey]);
 
   const axes = taxonomy.map((group) => group.dimension);
   const scores = new Map(
@@ -68,6 +75,8 @@ export function useAbilityData(classroom, notify) {
     taxonomy,
     ability,
     loading,
+    error,
+    reload: () => setReloadKey((key) => key + 1),
     axes,
     values: axes.map((name) => (scores.has(name) ? scores.get(name) : 0)),
     missing: axes.filter((name) => !scores.has(name)),
@@ -77,7 +86,8 @@ export function useAbilityData(classroom, notify) {
 
 /** 学生工作台的能力概览：综合分 + 等级 + 雷达图 + 技能树 + 趋势 + 与上一次对比。 */
 export function AbilityOverview({ classroom, notify }) {
-  const { taxonomy, ability, loading, axes, values, missing } = useAbilityData(classroom, notify);
+  const { taxonomy, ability, loading, error, reload, axes, values, missing } =
+    useAbilityData(classroom, notify);
   const [picked, setPicked] = useState(null);
 
   if (!classroom?.id) {
@@ -105,9 +115,17 @@ export function AbilityOverview({ classroom, notify }) {
           <div className="eyebrow">MY ABILITY · {classroom.name}</div>
           <h3>我的能力画像</h3>
         </div>
-        <span className="muted small">{loading ? "加载中…" : "数据来自该班级最新一次测评"}</span>
+        <span className="muted small">
+          {loading ? "加载中…" : error ? "加载失败" : "数据来自该班级最新一次测评"}
+        </span>
       </div>
 
+      {loading ? (
+        <Loading text="正在加载能力画像…" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={reload} />
+      ) : (
+        <>
       <div className="ability-hero">
         <div className="ability-score">
           <span className="eyebrow">OVERALL</span>
@@ -180,13 +198,15 @@ export function AbilityOverview({ classroom, notify }) {
           {picked && <PointDetail point={picked} key={`${picked.name}-${picked.score}`} />}
         </article>
       </div>
+        </>
+      )}
     </section>
   );
 }
 
 /** 「AI 能力标准」页：6 维度 × 20 考察点 + 介绍 + 本次得分。 */
 export function AbilityStandards({ classroom, notify }) {
-  const { taxonomy, ability, loading } = useAbilityData(classroom, notify);
+  const { taxonomy, ability, loading, error, reload } = useAbilityData(classroom, notify);
   const [openDimension, setOpenDimension] = useState(null);
   const scores = new Map(
     (ability?.points || []).map((row) => [row.assessmentPoint, Number(row.score)]),
@@ -205,7 +225,8 @@ export function AbilityStandards({ classroom, notify }) {
           </p>
         </div>
       </div>
-      {loading && !taxonomy.length && <p className="chart-empty">正在加载能力标准…</p>}
+      {loading && !taxonomy.length && <Loading text="正在加载能力标准…" />}
+      {error && <ErrorState message={error} onRetry={reload} />}
       <div className="standards-grid">
         {taxonomy.map((group) => {
           const points = group.points || [];

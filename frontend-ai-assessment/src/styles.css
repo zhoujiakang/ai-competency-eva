@@ -2373,3 +2373,157 @@ td small {
   letter-spacing: 0.08em;
   color: #898989;
 }
+
+/* ==========================================================================
+   反馈层（提示条 / 加载态 / 错误态 / 字段校验）
+
+   这一组是「让用户知道发生了什么」的基础设施。提示条挂在 App 最外层，
+   登录页、注册页同样能看到——之前它只在 Shell 里渲染，导致登录失败的报错
+   完全不可见。
+   ========================================================================== */
+
+.toast-host {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+/* 覆盖旧的单条固定定位：现在由 .toast-host 统一摆放 */
+.toast {
+  position: static;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 380px;
+  padding: 13px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  pointer-events: auto;
+  animation: toast-in 0.18s ease;
+}
+.toast svg {
+  flex: none;
+  margin-top: 2px;
+}
+.toast span {
+  flex: 1;
+  word-break: break-word;
+}
+.toast-info {
+  border-color: #202020;
+  background: #202020;
+}
+.toast-success {
+  border-color: #2f6b36;
+  background: #3f7a45;
+}
+.toast-error {
+  border-color: #8f1d14;
+  background: #b42318;
+}
+.toast-close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.toast-close:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 页面级加载 / 错误：避免把"还在加载"和"没有数据"显示成同一个样子 */
+.state-block {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 46px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.state-block p {
+  margin: 0;
+}
+.state-error {
+  color: #b42318;
+}
+.state-error .outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 字段级校验 */
+.field.has-error input {
+  border-color: #b42318;
+}
+.field-error {
+  color: #b42318;
+  font-size: 11px;
+}
+.form-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #f0c2be;
+  border-radius: 6px;
+  background: #fdf3f2;
+  color: #b42318;
+  font-size: 12px;
+}
+
+/* 后端可达性：由真实请求结果驱动 */
+.top-actions.offline {
+  color: #b42318;
+}
+.top-actions.offline .status-dot {
+  background: #b42318;
+}
+
+/* 窄屏：侧边栏收成抽屉，汉堡按钮才真正有用 */
+.sidebar-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  border: 0;
+  background: rgba(17, 17, 17, 0.35);
+}
+.app-shell.menu-open .sidebar {
+  display: flex;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  background: #fff;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.18);
+}

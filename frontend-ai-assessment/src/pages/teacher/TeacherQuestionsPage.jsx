@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Copy, Eye, Plus } from "lucide-react";
 import { questionApi } from "../../services/api";
 import { Modal, PageTitle } from "../../components/common";
+import { Loading } from "../../components/Feedback";
 import { EMPTY_QUESTION_FORM, QuestionForm } from "./QuestionForm";
 import {
   questionAssessmentPoints,
@@ -19,8 +20,16 @@ export function TeacherQuestionsPage({ notify }) {
   const [form, setForm] = useState(EMPTY_QUESTION_FORM);
   const [offlineTarget, setOfflineTarget] = useState(null);
   const [offlining, setOfflining] = useState(false);
+  const [loading, setLoading] = useState(true);
+  // 正在处理的那一行：按钮禁用 + 文案变化，避免连点重复提交
+  const [busyId, setBusyId] = useState(null);
 
-  const load = () => questionApi.list().then(setItems).catch((e) => notify(e.message));
+  const load = () =>
+    questionApi
+      .list()
+      .then((rows) => setItems(rows || []))
+      .catch((e) => notify(e, "error"))
+      .finally(() => setLoading(false));
 
   useEffect(() => {
     load();
@@ -29,16 +38,20 @@ export function TeacherQuestionsPage({ notify }) {
         setPublicItems(publicList);
         setTaxonomy(tax);
       })
-      .catch(() => {});
+      .catch((e) => notify(e, "error"));
   }, []);
 
   const operate = async (fn, id) => {
+    if (busyId) return;
+    setBusyId(id);
     try {
       await fn(id);
-      notify("操作成功");
-      load();
+      notify("操作成功", "success");
+      await load();
     } catch (e) {
-      notify(e.message);
+      notify(e, "error");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -74,22 +87,22 @@ export function TeacherQuestionsPage({ notify }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!form.dimensions.length) return notify("请至少选择一个维度");
-    if (!form.assessmentPoints.length) return notify("请至少选择一个考察点");
+    if (!form.dimensions.length) return notify("请至少选择一个维度", "error");
+    if (!form.assessmentPoints.length) return notify("请至少选择一个考察点", "error");
     const payload = { ...form, tags: form.dimensions, difficulty: Number(form.difficulty) };
     payload.score = Number(form.score) || 0;
     try {
       if (editing) {
         await questionApi.update(editing.id, payload);
-        notify("题目已更新");
+        notify("题目已更新", "success");
       } else {
         await questionApi.create(payload);
-        notify("题目创建成功");
+        notify("题目创建成功", "success");
       }
       closeForm();
       load();
     } catch (e) {
-      notify(e.message);
+      notify(e, "error");
     }
   };
 
@@ -99,11 +112,11 @@ export function TeacherQuestionsPage({ notify }) {
     setOfflining(true);
     try {
       await questionApi.offline(offlineTarget.id);
-      notify("题目已下线，可随时恢复");
+      notify("题目已下线，可随时恢复", "success");
       setOfflineTarget(null);
       load();
     } catch (e) {
-      notify(e.message);
+      notify(e, "error");
     } finally {
       setOfflining(false);
     }
@@ -141,7 +154,9 @@ export function TeacherQuestionsPage({ notify }) {
         />
       )}
 
-      {showPublic ? (
+      {loading ? (
+        <Loading text="正在加载题库…" />
+      ) : showPublic ? (
         <div className="table-wrap">
           <table className="table-fixed">
             <colgroup>
@@ -168,8 +183,13 @@ export function TeacherQuestionsPage({ notify }) {
                   <td>{q.type}</td>
                   <td>{q.score ?? 0} 分</td>
                   <td>
-                    <button className="outline" onClick={() => operate(questionApi.copyPublic, q.id)}>
-                      <Copy size={14} />复制到我的题库
+                    <button
+                      className="outline"
+                      onClick={() => operate(questionApi.copyPublic, q.id)}
+                      disabled={busyId === q.id}
+                    >
+                      <Copy size={14} />
+                      {busyId === q.id ? "复制中…" : "复制到我的题库"}
                     </button>
                   </td>
                 </tr>
@@ -217,16 +237,28 @@ export function TeacherQuestionsPage({ notify }) {
                         编辑
                       </button>
                       {q.visibility === "public" ? (
-                        <button className="text-btn" onClick={() => operate(questionApi.unpublish, q.id)}>
+                        <button
+                          className="text-btn"
+                          onClick={() => operate(questionApi.unpublish, q.id)}
+                          disabled={busyId === q.id}
+                        >
                           转私有
                         </button>
                       ) : (
-                        <button className="text-btn" onClick={() => operate(questionApi.publish, q.id)}>
+                        <button
+                          className="text-btn"
+                          onClick={() => operate(questionApi.publish, q.id)}
+                          disabled={busyId === q.id}
+                        >
                           公开
                         </button>
                       )}
                       {q.status === "offline" ? (
-                        <button className="text-btn" onClick={() => operate(questionApi.restore, q.id)}>
+                        <button
+                          className="text-btn"
+                          onClick={() => operate(questionApi.restore, q.id)}
+                          disabled={busyId === q.id}
+                        >
                           恢复
                         </button>
                       ) : (

@@ -66,7 +66,7 @@ function StudentResultModal({ id, taskTitle, onClose, onBack, notify }) {
     teacherApi
       .detail(id)
       .then(setData)
-      .catch((error) => notify(error.message));
+      .catch((error) => notify(error, "error"));
   }, [id]);
 
   const student = data?.student;
@@ -154,6 +154,8 @@ export function TeacherTasksPage({ notify }) {
   const [form, setForm] = useState(EMPTY_FORM);
   // 任务指标（N18）：已发布 / 进行中 / 参与学生 / 平均完成率
   const [metrics, setMetrics] = useState({ tasks: 0, running: 0, students: 0, completion: 0 });
+  // 指标要等好几个接口回来，先显示「—」而不是 0：否则老师会以为真的一题都没有
+  const [metricsLoading, setMetricsLoading] = useState(true);
 
   const load = () =>
     classApi
@@ -200,7 +202,8 @@ export function TeacherTasksPage({ notify }) {
           completion: expected ? Math.round((completed / expected) * 100) : 0,
         });
       })
-      .catch((error) => notify(error.message));
+      .catch((error) => notify(error, "error"))
+      .finally(() => setMetricsLoading(false));
 
   useEffect(() => {
     load();
@@ -243,12 +246,12 @@ export function TeacherTasksPage({ notify }) {
         estimatedDuration: Number(form.estimatedDuration),
         questionCount: Number(form.questionCount),
       });
-      notify("测评任务发布成功");
+      notify("测评任务发布成功", "success");
       setOpen(false);
       setForm(EMPTY_FORM);
       load();
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
     }
   };
 
@@ -256,7 +259,7 @@ export function TeacherTasksPage({ notify }) {
     try {
       setResultTask({ task, rows: await teacherApi.taskResults(task.id) });
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
     }
   };
 
@@ -334,19 +337,19 @@ export function TeacherTasksPage({ notify }) {
           <section className="task-metrics">
             <article>
               <ClipboardList />
-              <span>已发布任务<b>{metrics.tasks}</b></span>
+              <span>已发布任务<b>{metricsLoading ? "—" : metrics.tasks}</b></span>
             </article>
             <article>
               <Play />
-              <span>进行中任务<b>{metrics.running}</b></span>
+              <span>进行中任务<b>{metricsLoading ? "—" : metrics.running}</b></span>
             </article>
             <article>
               <UsersRound />
-              <span>参与学生<b>{metrics.students}</b></span>
+              <span>参与学生<b>{metricsLoading ? "—" : metrics.students}</b></span>
             </article>
             <article>
               <Gauge />
-              <span>平均完成率<b>{metrics.completion}%</b></span>
+              <span>平均完成率<b>{metricsLoading ? "—" : `${metrics.completion}%`}</b></span>
             </article>
           </section>
           <div className="task-list">

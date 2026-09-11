@@ -14,26 +14,46 @@ export function ProfilePage({ role, user, notify }) {
     oldPassword: "",
     newPassword: "",
   });
+  // 保存中状态：按钮转文案 + 禁用，避免连点提交两次
+  const [savingProfile, setSavingProfile] = React.useState(false);
+  const [savingPassword, setSavingPassword] = React.useState(false);
   const updateProfile = async (event) => {
     event.preventDefault();
+    if (savingProfile) return;
+    if (!form.name.trim() && !form.nickname.trim()) {
+      return notify("姓名和昵称至少填一个", "error");
+    }
+    setSavingProfile(true);
     try {
       const next = await userApi.update(form);
       writeUser(next);
-      notify("资料已更新");
+      notify("资料已更新", "success");
       setEditing(false);
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
+    } finally {
+      setSavingProfile(false);
     }
   };
   const updatePassword = async (event) => {
     event.preventDefault();
+    if (savingPassword) return;
+    if (!password.oldPassword) return notify("请输入当前密码", "error");
+    if (!password.newPassword) return notify("请输入新密码", "error");
+    if (/[\u3400-\u9fff]/.test(password.newPassword))
+      return notify("新密码不能包含中文", "error");
+    if (password.newPassword === password.oldPassword)
+      return notify("新密码不能与当前密码相同", "error");
+    setSavingPassword(true);
     try {
       await userApi.password(password);
-      notify("密码修改成功");
+      notify("密码修改成功", "success");
       setPasswordOpen(false);
       setPassword({ oldPassword: "", newPassword: "" });
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
+    } finally {
+      setSavingPassword(false);
     }
   };
   return (
@@ -87,7 +107,9 @@ export function ProfilePage({ role, user, notify }) {
               onChange={(value) => setForm({ ...form, nickname: value })}
             />
           </div>
-          <button className="primary">保存资料</button>
+          <button className="primary" disabled={savingProfile}>
+            {savingProfile ? "保存中…" : "保存资料"}
+          </button>
         </form>
       )}
       {passwordOpen && (
@@ -112,7 +134,9 @@ export function ProfilePage({ role, user, notify }) {
               }
             />
           </div>
-          <button className="primary">确认修改密码</button>
+          <button className="primary" disabled={savingPassword}>
+            {savingPassword ? "提交中…" : "确认修改密码"}
+          </button>
         </form>
       )}
     </div>

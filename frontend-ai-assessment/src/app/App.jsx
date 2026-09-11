@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { authApi } from "../services/api";
 import {
   clearSession,
@@ -10,6 +10,7 @@ import {
 } from "./storage";
 import { Landing } from "../components/layout/Landing";
 import { Shell } from "../components/layout/Shell";
+import { ToastHost } from "../components/Feedback";
 import { AuthPage } from "../pages/auth/AuthPage";
 import {
   StudentDashboard,
@@ -39,13 +40,37 @@ export function App() {
   );
   const [role, setRole] = useState(() => readRole() || "student");
   const [user, setUser] = useState(readUser);
-  const [toast, setToast] = useState("");
-  useEffect(() => {
-    if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(""), 3000);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  const [toasts, setToasts] = useState([]);
+
+  const dismissToast = useCallback(
+    (id) => setToasts((previous) => previous.filter((item) => item.id !== id)),
+    [],
+  );
+
+  /**
+   * 全局提示：挂在 App 最外层，所以登录页、注册页同样看得到。
+   *
+   *   notify("资料已更新")                  → info，3 秒
+   *   notify(error)                         → error（传 Error 对象自动识别），6 秒
+   *   notify("账号或密码错误", "error")      → error，显式指定
+   *
+   * 最多同时显示 3 条，多的把最旧的挤掉，避免刷屏。
+   */
+  const notify = useCallback((message, type) => {
+    const text =
+      message instanceof Error ? message.message : String(message ?? "").trim();
+    if (!text) return;
+    const kind = type || (message instanceof Error ? "error" : "info");
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts((previous) => [...previous.slice(-2), { id, text, type: kind }]);
+    setTimeout(
+      () => setToasts((previous) => previous.filter((item) => item.id !== id)),
+      kind === "error" ? 6000 : 3000,
+    );
+  }, []);
+
   const go = (nextScreen) => setScreen(nextScreen);
+
   const login = (nextUser, nextRole) => {
     setUser(nextUser);
     setRole(nextRole);
@@ -53,16 +78,33 @@ export function App() {
     writeRole(nextRole);
     go("dashboard");
   };
+
   const logout = async () => {
     try {
       await authApi.logout();
-    } catch {}
+    } catch {
+      // 退出登录失败也要把本地会话清干净，不打断用户
+    }
     clearSession();
     setUser(null);
     go("landing");
   };
-  if (screen === "landing")
-    return (
+
+  // 登录态失效：api 层发现 401 会发这个事件，这里统一提示并回到登录页，
+  // 而不是让页面默默刷新一下、把用户丢回首页却不说原因。
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setScreen("landing");
+      notify("登录已过期，请重新登录", "error");
+    };
+    window.addEventListener("session-expired", onExpired);
+    return () => window.removeEventListener("session-expired", onExpired);
+  }, [notify]);
+
+  let view;
+  if (screen === "landing") {
+    view = (
       <Landing
         choose={(nextRole) => {
           setRole(nextRole);
@@ -70,39 +112,48 @@ export function App() {
         }}
       />
     );
-  if (screen === "login")
-    return (
+  } else if (screen === "login") {
+    view = (
       <AuthPage
         mode="login"
         role={role}
         back={() => go("landing")}
         register={() => go("register")}
         onLogin={login}
-        notify={setToast}
+        notify={notify}
       />
     );
-  if (screen === "register")
-    return (
+  } else if (screen === "register") {
+    view = (
       <AuthPage
         mode="register"
         role={role}
         back={() => go("login")}
         register={() => go("login")}
         onLogin={login}
-        notify={setToast}
+        notify={notify}
       />
     );
+  } else {
+    view = (
+      <Shell
+        role={role}
+        user={user}
+        screen={screen}
+        go={go}
+        logout={logout}
+        notify={notify}
+      >
+        <Page screen={screen} role={role} user={user} go={go} notify={notify} />
+      </Shell>
+    );
+  }
+
   return (
-    <Shell
-      role={role}
-      user={user}
-      screen={screen}
-      go={go}
-      logout={logout}
-      toast={toast}
-    >
-      <Page screen={screen} role={role} user={user} go={go} notify={setToast} />
-    </Shell>
+    <>
+      {view}
+      <ToastHost toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }
 
@@ -119,7 +170,7 @@ function Page({ screen, role, user, go, notify }) {
     ) : (
       <TeacherClassesPage notify={notify} />
     );
-  if (screen === "records") return <RecordsPage go={go} />;
+  if (screen === "records") return <RecordsPage go={go} notify={notify} />;
   if (screen === "reports") return <ReportsPage go={go} notify={notify} />;
   if (screen === "standards") return <StandardsPage notify={notify} />;
   if (screen === "profile")
@@ -138,6 +189,6 @@ function Page({ screen, role, user, go, notify }) {
     );
   if (screen === "assessment")
     return <AssessmentPage go={go} notify={notify} />;
-  if (screen === "result") return <ResultPage go={go} />;
-  return <StudentDashboard user={user} go={go} />;
+  if (screen === "result") return <ResultPage go={go} notify={notify} />;
+  return <StudentDashboard user={user} go={go} notify={notify} />;
 }

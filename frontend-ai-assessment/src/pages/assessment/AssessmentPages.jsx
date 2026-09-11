@@ -34,7 +34,7 @@ export function AssessmentPage({ go, notify }) {
 
   useEffect(() => {
     if (!assessment) {
-      notify("请先从班级任务开始测评");
+      notify("请先从班级任务开始测评", "error");
       go("classes");
       return;
     }
@@ -43,7 +43,7 @@ export function AssessmentPage({ go, notify }) {
         const data = await assessmentApi.conversation(assessment.id);
         // 已完成的任务不允许再次进入测评：直接打开结果页（一人一次）。
         if (data.assessment?.status && data.assessment.status !== "in_progress") {
-          notify("该测评已完成，正在打开结果");
+          notify("该测评已完成，正在打开结果", "info");
           go("result");
           return;
         }
@@ -59,7 +59,7 @@ export function AssessmentPage({ go, notify }) {
         if (!data.question) await assessmentApi.chat(assessment.id, "", handleEvent("opening"));
       } catch (error) {
         removeCurrentAssessment();
-        notify(`${error.message}，请返回工作台重新开始`);
+        notify(`${error.message}，请返回工作台重新开始`, "error");
         go("dashboard");
       }
     })();
@@ -86,13 +86,13 @@ export function AssessmentPage({ go, notify }) {
       // 这一轮没有说话内容（例如这道题已经答完）就别留空气泡
       setItems((previous) => previous.filter((item) => !(item.id === aiId && !item.text)));
       if (finished) {
-        notify?.("测评已完成，正在打开结果");
+        notify?.("测评已完成，正在打开结果", "success");
         go("result");
       }
     } catch (error) {
       setText(value);
       setItems((previous) => previous.filter((item) => item.id !== studentId && item.id !== aiId));
-      notify(error.message);
+      notify(error, "error");
     } finally {
       setSending(false);
     }
@@ -101,7 +101,7 @@ export function AssessmentPage({ go, notify }) {
   // 中途退出不结束测评：记录保持 in_progress，之后从「测评任务」或「测评记录」点「继续测评」回来。
   // 只有把题目答完（或达到任务题量）由 Agent 自动收尾，才会真正置为已完成。
   const leaveAssessment = () => {
-    notify?.("已保存进度，可以随时回来继续");
+    notify?.("已保存进度，可以随时回来继续", "info");
     go("dashboard");
   };
 

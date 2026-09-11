@@ -1,36 +1,51 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ArrowRight, BookOpen, FileCheck2, Gauge, GraduationCap, Users } from "lucide-react";
 import { classApi, taskApi, assessmentApi } from "../../services/api";
 import { readSelectedClass, writeCurrentAssessment, writeSelectedClass } from "../../app/storage";
 import { PageTitle } from "../../components/common";
+import { ErrorState, Loading } from "../../components/Feedback";
 import { useSelectedClass } from "../../components/AbilityOverview";
 
 export function StudentClassesPage({ go, notify }) {
   const [classes, setClasses] = useState([]);
   const [code, setCode] = useState("");
-  const load = () =>
-    classApi
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [joining, setJoining] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError("");
+    return classApi
       .joined()
       .then(async (items) => {
         setClasses(items);
         const selected = items.find((item) => item.id === readSelectedClass()?.id) || items[0] || null;
         writeSelectedClass(selected);
       })
-      .catch(() => setClasses([]));
+      // 之前是静默失败：加载不出来时页面只显示"还没有加入班级"，用户以为是自己的问题
+      .catch((err) => setError(err.message || "班级列表加载失败"))
+      .finally(() => setLoading(false));
+  }, []);
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
   const join = async () => {
+    if (!code.trim()) return notify("请先输入邀请码", "error");
+    if (joining) return;
+    setJoining(true);
     try {
-      await classApi.join(code);
+      const classroom = await classApi.join(code.trim());
       setCode("");
-      notify("加入班级成功");
+      notify(`已加入「${classroom?.name || "班级"}」`, "success");
       load();
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
+    } finally {
+      setJoining(false);
     }
   };
-  const leave = async (id) => { try { await classApi.leave(id); notify("已退出班级"); load(); } catch (error) { notify(error.message); } };
+  const leave = async (id) => { try { await classApi.leave(id); notify("已退出班级", "success"); load(); } catch (error) { notify(error, "error"); } };
   return (
     <div className="page">
       <PageTitle
@@ -44,13 +59,17 @@ export function StudentClassesPage({ go, notify }) {
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
-            <button className="primary" onClick={join}>
-              加入班级
+            <button className="primary" onClick={join} disabled={joining}>
+              {joining ? "正在加入…" : "加入班级"}
             </button>
           </div>
         }
       />
-      {classes.length ? (
+      {loading ? (
+        <Loading text="正在加载班级…" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : classes.length ? (
         <div className="card-grid">
           {classes.map((item) => (
             <div className="class-card" key={item.id}>
@@ -76,8 +95,8 @@ export function StudentClassesPage({ go, notify }) {
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
-            <button className="primary" onClick={join}>
-              加入班级
+            <button className="primary" onClick={join} disabled={joining}>
+              {joining ? "正在加入…" : "加入班级"}
             </button>
           </div>
         </div>
@@ -90,19 +109,28 @@ export function StudentTasksPage({ go, notify }) {
   const [items, setItems] = useState([]);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  // 正在进入的任务 id：防止网络慢时连点、重复发请求
+  const [openingId, setOpeningId] = useState(null);
 
   // 任务与「我的测评记录」一起取回，按 taskId 匹配出每个任务的状态。
-  const load = () =>
-    Promise.all([taskApi.available().catch(() => []), assessmentApi.list().catch(() => [])])
+  const load = useCallback(() => {
+    setLoading(true);
+    setError("");
+    return Promise.all([taskApi.available(), assessmentApi.list()])
       .then(([tasks, rows]) => {
         setItems(tasks);
         setRecords(rows);
       })
+      // 之前两处都 catch 成空数组：请求失败时页面显示"暂无可参加的测评"，
+      // 用户会以为老师没布置任务
+      .catch((err) => setError(err.message || "任务列表加载失败"))
       .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const DONE = ["completed", "completed_with_scoring_failure"];
   // 一人一次：一个任务只对应一条测评记录，完成后不再出现在待完成里。
@@ -118,6 +146,7 @@ export function StudentTasksPage({ go, notify }) {
   );
 
   const open = async ({ task, mine, status }) => {
+    if (openingId) return;
     try {
       if (status === "done") {
         writeCurrentAssessment(mine);
@@ -125,14 +154,18 @@ export function StudentTasksPage({ go, notify }) {
         return;
       }
       if (status === "doing") {
+        setOpeningId(task.id);
         writeCurrentAssessment(mine);
         go("assessment");
         return;
       }
+      setOpeningId(task.id);
       writeCurrentAssessment(await taskApi.start(task.id));
       go("assessment");
     } catch (error) {
-      notify?.(error.message);
+      notify?.(error, "error");
+    } finally {
+      setOpeningId(null);
     }
   };
 
@@ -143,7 +176,11 @@ export function StudentTasksPage({ go, notify }) {
         title="测评任务"
         desc="老师布置的任务只需完成一次，完成后可以随时回来查看报告。"
       />
-      {rows.length ? (
+      {loading ? (
+        <Loading text="正在加载任务…" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : rows.length ? (
         <>
           <p className="task-summary">
             {pending.length ? `还有 ${pending.length} 个任务待完成` : "所有任务都已完成"}
@@ -171,8 +208,15 @@ export function StudentTasksPage({ go, notify }) {
                   <button
                     className={status === "done" ? "outline" : "primary"}
                     onClick={() => open(row)}
+                    disabled={openingId === task.id}
                   >
-                    {status === "done" ? "查看报告" : status === "doing" ? "继续测评" : "开始测评"}
+                    {openingId === task.id
+                      ? "正在进入…"
+                      : status === "done"
+                        ? "查看报告"
+                        : status === "doing"
+                          ? "继续测评"
+                          : "开始测评"}
                     <ArrowRight size={15} />
                   </button>
                 </div>
@@ -183,27 +227,38 @@ export function StudentTasksPage({ go, notify }) {
       ) : (
         <div className="large-empty">
           <BookOpen size={30} />
-          <h3>{loading ? "正在加载任务…" : "暂无可参加的测评"}</h3>
-          <p>{loading ? "稍等一下" : "先加入班级，等待老师发布任务。"}</p>
+          <h3>暂无可参加的测评</h3>
+          <p>先加入班级，等待老师发布任务。</p>
         </div>
       )}
     </div>
   );
 }
 
-export function RecordsPage({ go }) {
+export function RecordsPage({ go, notify }) {
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const classroom = useSelectedClass();
   const isCompleted = (status) => status === "completed" || status === "completed_with_scoring_failure";
   const statusLabel = (status) => status === "completed" ? "已完成" : status === "completed_with_scoring_failure" ? "已完成（部分评分失败）" : "进行中";
-  useEffect(() => {
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError("");
     // 测评记录按当前选中班级过滤；没有选中班级时退回全部记录。
-    assessmentApi
+    return assessmentApi
       .list(classroom?.id)
-      .then(setItems)
-      .catch(() => setItems([]));
+      .then((rows) => setItems(rows || []))
+      // 之前静默失败会显示"还没有测评记录"，看起来像成绩被清空了
+      .catch((err) => setError(err.message || "测评记录加载失败"))
+      .finally(() => setLoading(false));
   }, [classroom?.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
   return (
     <div className="page">
       <PageTitle
@@ -231,7 +286,11 @@ export function RecordsPage({ go }) {
           已完成
         </button>
       </div>
-      {(filter === "all"
+      {loading ? (
+        <Loading text="正在加载测评记录…" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : (filter === "all"
         ? items
         : items.filter((item) => filter === "completed" ? isCompleted(item.status) : item.status === filter)
       ).length ? (
@@ -297,7 +356,7 @@ export function ReportsPage({ go, notify }) {
     assessmentApi
       .list(classroom?.id)
       .then((rows) => active && setItems(rows || []))
-      .catch((error) => active && notify?.(error.message))
+      .catch((error) => active && notify?.(error, "error"))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;

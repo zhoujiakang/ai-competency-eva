@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Database, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { classApi, questionApi } from "../../services/api";
 import { Field, Modal, PageTitle } from "../../components/common";
+import { Loading } from "../../components/Feedback";
 import { questionDimensionLabel } from "../../app/taxonomy";
 
 /** 单个班级的管理面板：邀请码、成员、班级题库。 */
@@ -31,7 +32,7 @@ function ClassPanel({ item, notify }) {
       setQuestions(classQuestions);
       setMine(myQuestions);
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
     }
   };
 
@@ -45,7 +46,7 @@ function ClassPanel({ item, notify }) {
       notify(message);
       load();
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
     }
   };
 
@@ -94,11 +95,11 @@ function ClassPanel({ item, notify }) {
     setRemoving(true);
     try {
       await classApi.removeQuestion(item.id, removeTarget.id);
-      notify("题目已从班级题库移除");
+      notify("题目已从班级题库移除", "success");
       setRemoveTarget(null);
       load();
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
     } finally {
       setRemoving(false);
     }
@@ -270,6 +271,8 @@ export function TeacherClassesPage({ notify }) {
   const [current, setCurrent] = useState(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "" });
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
 
   // 一次只展示一个班级：列表刷新后仍然停在原来选中的那个，它被删掉或首次加载才落到第一个
   const load = async () => {
@@ -278,7 +281,9 @@ export function TeacherClassesPage({ notify }) {
       setItems(list);
       setCurrent((prev) => (list.some((c) => c.id === prev) ? prev : list[0]?.id ?? null));
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -288,15 +293,20 @@ export function TeacherClassesPage({ notify }) {
 
   const create = async (event) => {
     event.preventDefault();
+    if (creating) return;
+    if (!form.name.trim()) return notify("请填写班级名称", "error");
+    setCreating(true);
     try {
       const created = await classApi.create(form);
-      notify(`班级创建成功，邀请码：${created.inviteCode}`);
+      notify(`班级创建成功，邀请码：${created.inviteCode}`, "success");
       setOpen(false);
       setForm({ name: "", description: "" });
       setCurrent(created.id);
       load();
     } catch (error) {
-      notify(error.message);
+      notify(error, "error");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -325,11 +335,15 @@ export function TeacherClassesPage({ notify }) {
               onChange={(v) => setForm({ ...form, description: v })}
             />
           </div>
-          <button className="primary">保存并生成邀请码</button>
+          <button className="primary" disabled={creating}>
+            {creating ? "正在创建…" : "保存并生成邀请码"}
+          </button>
         </form>
       )}
 
-      {items.length ? (
+      {loading ? (
+        <Loading text="正在加载班级…" />
+      ) : items.length ? (
         <>
           <div className="class-switcher">
             <span>切换班级 · 共 {items.length} 个</span>

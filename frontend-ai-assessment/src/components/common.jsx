@@ -13,9 +13,19 @@ export function Feature({ num, icon, title, text }) {
     </div>
   );
 }
-export function Field({ label, value, onChange, type = "text", required }) {
+export function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required,
+  error,
+  hint,
+  placeholder,
+  autoComplete,
+}) {
   return (
-    <label className="field">
+    <label className={`field${error ? " has-error" : ""}`}>
       <span>
         {label}
         {required && " *"}
@@ -25,7 +35,12 @@ export function Field({ label, value, onChange, type = "text", required }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        aria-invalid={error ? "true" : undefined}
       />
+      {error && <small className="field-error">{error}</small>}
+      {!error && hint && <small className="field-hint">{hint}</small>}
     </label>
   );
 }
@@ -49,12 +64,16 @@ export function Stat({ value, label, muted = false }) {
     </div>
   );
 }
-export function Empty({ icon, text, action }) {
+export function Empty({ icon, text, action, onAction }) {
   return (
     <div className="empty">
       {icon}
       <p>{text}</p>
-      {action && <button className="outline">{action}</button>}
+      {action && (
+        <button className="outline" onClick={onAction}>
+          {action}
+        </button>
+      )}
     </div>
   );
 }
