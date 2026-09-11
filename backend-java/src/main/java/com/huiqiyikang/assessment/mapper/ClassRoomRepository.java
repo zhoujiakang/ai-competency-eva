@@ -1,0 +1,2 @@
+package com.huiqiyikang.assessment.mapper; import com.huiqiyikang.assessment.entity.ClassRoom; import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper; import java.util.List;
+public interface ClassRoomRepository extends BaseMapperX<ClassRoom>{default List<ClassRoom> findByTeacherUserId(Long teacherUserId){return selectList(new QueryWrapper<ClassRoom>().eq("teacher_user_id",teacherUserId));}}

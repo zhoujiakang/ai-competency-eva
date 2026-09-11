@@ -1,0 +1,86 @@
+# AI 能力测评系统 · 一键部署
+#
+#   cp .env.example .env    # 填好 DB_PASSWORD / AGENT_SERVICE_TOKEN / DEEPSEEK_API_KEY
+#   docker compose up -d --build
+#
+# 访问 http://<服务器IP>:${FRONTEND_PORT:-8088}
+#
+# 只有前端对宿主机暴露端口，MySQL / Redis / Agent / 后端都只在 compose 内部网络里，
+# 既安全也不会和宿主机上已有的 MySQL、Redis 抢端口。
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ai_assessment
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?请先在 .env 里设置 DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - assessment-mysql:/var/lib/mysql
+      # 只在「数据卷为空」的首次启动时执行，用来建表。
+      - ./database.sql:/docker-entrypoint-initdb.d/01-database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - assessment-redis:/data
+    restart: unless-stopped
+
+  agent:
+    build: ./agent-python
+    environment:
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?请先在 .env 里设置 AGENT_SERVICE_TOKEN}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?请先在 .env 里设置 DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      # 测评过程由 Agent 负责，它需要直连 MySQL 写对话记忆和评分结果
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ai_assessment
+      AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-INFO}
+    depends_on:
+      mysql: { condition: service_healthy }
+    restart: unless-stopped
+
+  backend:
+    build: ./backend-java
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/ai_assessment?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      AGENT_BASE_URL: http://agent:8090
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN}
+      # 前端与接口同源（nginx 反代），这里只需要放开本机调试来源
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4174,http://localhost:3000}
+    ports:
+      # 想用 curl / 调试工具直接打后端时留着；只给前端用的话可以删掉
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      mysql: { condition: service_healthy }
+      agent: { condition: service_started }
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend-ai-assessment
+      args:
+        VITE_API_BASE: /api
+    ports:
+      - "${FRONTEND_PORT:-8088}:80"
+    depends_on:
+      backend: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  assessment-mysql:
+  assessment-redis:

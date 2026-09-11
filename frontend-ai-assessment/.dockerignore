@@ -1,0 +1,7 @@
+# 依赖与构建产物：镜像里会重新 npm ci + build
+node_modules/
+dist/
+
+# 日志与系统文件
+*.log
+.DS_Store

@@ -1,0 +1,1 @@
+package com.huiqiyikang.assessment.mapper; import com.huiqiyikang.assessment.entity.Teacher; import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper; public interface TeacherRepository extends BaseMapperX<Teacher>{default boolean existsByUserId(Long id){return selectCount(new QueryWrapper<Teacher>().eq("user_id",id))>0;}}

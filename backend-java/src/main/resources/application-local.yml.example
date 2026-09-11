@@ -1,0 +1,17 @@
+# 提交此文件作为配置模板；请复制为 application-local.yml 后填写本机密钥。
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/ai_assessment?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:change-me}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+app:
+  cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:4174}
+  ai:
+    provider: ${AI_PROVIDER:deepseek}
+    api-key: ${AI_API_KEY:replace-with-your-deepseek-key}
+    base-url: ${AI_BASE_URL:https://api.deepseek.com}
+    model: ${AI_MODEL:deepseek-chat}

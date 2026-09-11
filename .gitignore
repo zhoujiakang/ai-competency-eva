@@ -1,0 +1,28 @@
+# Java / Maven
+backend-java/target/
+*.class
+
+# Local configuration and secrets
+/.env
+backend-java/.env
+backend-java/.env.*
+!backend-java/.env.example
+backend-java/src/main/resources/application-local.yml
+!/.env.example
+
+# Frontend dependencies and build output
+frontend-ai-assessment/node_modules/
+frontend-ai-assessment/dist/
+frontend-ai-assessment/*.log
+
+# OS and IDE metadata
+.DS_Store
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/
+
+# Python Agent local environment
+agent-python/.venv/
+agent-python/.env
+agent-python/**/__pycache__/
+agent-python/.pytest_cache/

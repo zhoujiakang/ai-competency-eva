@@ -1,0 +1,37 @@
+server:
+  port: 8080
+spring:
+  application.name: ai-assessment-backend
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/ai_assessment?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+  data.redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+mybatis-plus:
+  mapper-locations: classpath:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+sa-token:
+  token-name: Authorization
+  # 登录态有效期 30 天；存储在 Redis，重启后端不会掉线
+  timeout: ${SA_TOKEN_TIMEOUT:2592000}
+  is-concurrent: false
+  is-share: false
+  is-read-cookie: false
+  is-print: false
+app:
+  cors-origins: ${CORS_ORIGINS:http://localhost:4174,http://localhost:3000}
+  # 用户能力画像：算法可整体替换，见 com.huiqiyikang.assessment.profile 包。
+  # strategy 选中哪个已注册的策略（启动日志会打印全部可用名字）；
+  # history-limit 是策略能看到的历史测评条数，只影响自定义算法，不影响默认 latest 的口径。
+  ability-profile:
+    strategy: ${ABILITY_PROFILE_STRATEGY:latest}
+    history-limit: ${ABILITY_PROFILE_HISTORY_LIMIT:20}
+  agent:
+    base-url: ${AGENT_BASE_URL:http://127.0.0.1:8090}
+    service-token: ${AGENT_SERVICE_TOKEN:}
+    connect-timeout-ms: ${AGENT_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AGENT_READ_TIMEOUT_MS:120000}
