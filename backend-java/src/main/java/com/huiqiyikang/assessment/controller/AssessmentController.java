@@ -20,10 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 测评的对外入口。
@@ -83,6 +81,7 @@ public class AssessmentController {
             Assessment a = existing.get();
             if (!"in_progress".equals(a.getStatus()))
                 throw new BusinessException("该测评任务已完成，不能重复参加", HttpStatus.CONFLICT);
+            a.setTaskTitle(task.getTitle());
             return ApiResponse.ok(a);
         }
         Assessment a = new Assessment(taskId, task.getClassId(), uid);
@@ -90,6 +89,8 @@ public class AssessmentController {
         a.setAssessmentPoints(task.getAssessmentPoints());
         // 任务型测评的题量跟随任务，前端进度条按它显示「第 x / y 题」。
         a.setQuestionCount(task.getQuestionCount() == null ? 0 : task.getQuestionCount());
+        // 任务已经查出来了，顺手带上标题，前端就不用拿 task_id 当名字显示。
+        a.setTaskTitle(task.getTitle());
         return ApiResponse.ok(assessments.save(a));
     }
 
@@ -125,9 +126,29 @@ public class AssessmentController {
      */
     @GetMapping("/assessments")
     public ApiResponse<?> list(@RequestParam(value = "classId", required = false) Long classId) {
-        return ApiResponse.ok(classId == null
+        List<Assessment> rows = classId == null
                 ? assessments.findByStudentUserIdOrderByCreatedAtDesc(uid())
-                : assessments.findByStudentUserIdAndClassIdOrderByCreatedAtDesc(uid(), classId));
+                : assessments.findByStudentUserIdAndClassIdOrderByCreatedAtDesc(uid(), classId);
+        fillTaskTitles(rows);
+        return ApiResponse.ok(rows);
+    }
+
+    /**
+     * 列表要显示「这是哪个任务」，这里批量补上任务标题。
+     *
+     * 以前前端只有 task_id，界面上只能写「测评任务 #3」——那是个数据库自增编号，
+     * 对学生没有任何意义。标题一次批量取回，与记录条数无关。
+     */
+    private void fillTaskTitles(List<Assessment> rows) {
+        List<Long> taskIds = rows.stream().map(Assessment::getTaskId)
+                .filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (taskIds.isEmpty()) return;
+        Map<Long, AssessmentTask> byId = new HashMap<>();
+        for (AssessmentTask task : tasks.findAllById(taskIds)) byId.put(task.getId(), task);
+        for (Assessment row : rows) {
+            AssessmentTask task = row.getTaskId() == null ? null : byId.get(row.getTaskId());
+            if (task != null) row.setTaskTitle(task.getTitle());
+        }
     }
 
     @GetMapping("/assessments/{id}")

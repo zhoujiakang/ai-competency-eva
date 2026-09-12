@@ -28,8 +28,9 @@ for cmd in ssh rsync scp curl; do
 done
 
 deploy_backend() {
-  say "后端：构建 jar"
-  (cd "$ROOT/backend-java" && ./mvnw -q -B -DskipTests package)
+  # 默认连单测一起跑（纯单测，几秒钟）：打包前的门禁。急着发版时用 SKIP_TESTS=1 跳过。
+  say "后端：构建 jar${SKIP_TESTS:+（跳过测试）}"
+  (cd "$ROOT/backend-java" && ./mvnw -q -B ${SKIP_TESTS:+-DskipTests} package)
   say "后端：上传"
   scp -q "$ROOT/backend-java/target/"*.jar "$SERVER:$APP_DIR/backend/app.jar"
 }

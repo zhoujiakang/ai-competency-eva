@@ -9,6 +9,8 @@ export function ProfilePage({ role, user, notify }) {
   const [form, setForm] = React.useState({
     name: user?.name || "",
     nickname: user?.nickname || "",
+    phone: user?.phone || "",
+    email: user?.email || "",
   });
   const [password, setPassword] = React.useState({
     oldPassword: "",
@@ -22,6 +24,13 @@ export function ProfilePage({ role, user, notify }) {
     if (savingProfile) return;
     if (!form.name.trim() && !form.nickname.trim()) {
       return notify("姓名和昵称至少填一个", "error");
+    }
+    // 与后端同一套规则：手机号选填但必须是 11 位数字，邮箱选填但要像邮箱。
+    if (form.phone.trim() && !/^\d{11}$/.test(form.phone.trim())) {
+      return notify("手机号应为 11 位数字", "error");
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      return notify("邮箱格式不正确", "error");
     }
     setSavingProfile(true);
     try {
@@ -81,8 +90,8 @@ export function ProfilePage({ role, user, notify }) {
           <Info label="账号" value={user?.account} />
           <Info label="姓名" value={user?.name} />
           <Info label="昵称" value={user?.nickname} />
-          <Info label="手机号" value="—" />
-          <Info label="邮箱" value="—" />
+          <Info label="手机号" value={user?.phone || "—"} />
+          <Info label="邮箱" value={user?.email || "—"} />
           <div className="info-actions">
             <button
               className="outline"
@@ -105,6 +114,16 @@ export function ProfilePage({ role, user, notify }) {
               label="昵称"
               value={form.nickname}
               onChange={(value) => setForm({ ...form, nickname: value })}
+            />
+            <Field
+              label="手机号（选填）"
+              value={form.phone}
+              onChange={(value) => setForm({ ...form, phone: value })}
+            />
+            <Field
+              label="邮箱（选填）"
+              value={form.email}
+              onChange={(value) => setForm({ ...form, email: value })}
             />
           </div>
           <button className="primary" disabled={savingProfile}>

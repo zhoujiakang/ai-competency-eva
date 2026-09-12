@@ -53,6 +53,68 @@ def message_view(row: dict) -> dict:
     }
 
 
+def prompt_message(question: dict) -> dict:
+    """合成一条题干消息：老数据没有把它写进消息表，这里按快照补回来。
+
+    合成消息没有数据库 id，所以 id 借用题目记录 id；前端本来就用题目记录 id
+    当题目气泡的 key，不受影响。
+    """
+    question_id = int(question["id"])
+    return {
+        "id": f"q-{question_id}",
+        "senderType": "ai",
+        "content": question.get("content_snapshot") or "",
+        "assessmentQuestionId": question_id,
+        "sequenceNo": 0,
+        "createdAt": iso(question.get("sent_at")),
+        "questionPrompt": True,
+        "questionAnswered": question.get("status") == "answered",
+        "synthetic": True,
+    }
+
+
+def conversation_messages(message_rows: list[dict], question_rows: list[dict]) -> list[dict]:
+    """恢复现场的对话列表：把每道题的题干放回对话，并标出题目状态。
+
+    新数据在发题时就把题干写进了 assessment_messages（该题第一条消息就是它），
+    这里只负责标记成 questionPrompt；老数据没有这条消息，用品快照合成一条，
+    否则「刷新页面 / 继续测评」时学生只看到一堆回答和追问，看不到自己在答什么。
+    每道题只标第一条，之后的追问与回答都是普通消息。
+    """
+    answered = {int(row["id"]): row["status"] == "answered" for row in question_rows}
+    grouped: dict[int, list[dict]] = {}
+    for row in message_rows:
+        grouped.setdefault(int(row["assessment_question_id"]), []).append(row)
+
+    messages: list[dict] = []
+    known: set[int] = set()
+    for question in question_rows:
+        question_id = int(question["id"])
+        known.add(question_id)
+        rows = grouped.get(question_id, [])
+        if not rows or rows[0]["sender_type"] != "ai":
+            messages.append(prompt_message(question))
+        for index, row in enumerate(rows):
+            view = message_view(row)
+            if index == 0:
+                view["questionPrompt"] = row["sender_type"] == "ai"
+                view["questionAnswered"] = answered.get(question_id, False)
+            messages.append(view)
+
+    # 兜底：题目快照已经不在了、消息还留着的数据。正常流程不会出现，
+    # 但真遇到也不能把消息吞掉，否则用户会觉得对话少了内容。
+    for question_id, rows in grouped.items():
+        if question_id in known:
+            continue
+        for index, row in enumerate(rows):
+            view = message_view(row)
+            if index == 0:
+                view["questionPrompt"] = False
+                view["questionAnswered"] = False
+            messages.append(view)
+    return messages
+
+
 def snapshot_view(row: dict) -> dict:
     return {
         "id": int(row["id"]),

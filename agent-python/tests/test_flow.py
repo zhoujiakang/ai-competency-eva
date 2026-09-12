@@ -305,6 +305,85 @@ def test_scoring_failure_is_recorded_as_failure_not_zero():
     assert repo.answers[0]["score"] is None
 
 
+def test_scoring_sees_the_ai_reply_from_the_same_turn():
+    """评分历史必须含本回合刚生成的 AI 回复。
+
+    流程把本题对话读一次后在本回合内复用（省掉重复查询），新写的 AI 回复要补进
+    这份内存历史；漏补的话评分看到的对话就少了最后一轮，理由会变得没有依据。
+    """
+    agent = FakeAgent(reply="说得挺完整。", action=NEXT_QUESTION)
+    repo = FakeRepo([question(11), question(12)])
+    flow = build_flow(agent, repo)
+    run(flow, 1, 7, "")                     # 开场：出第一道题
+
+    run(flow, 1, 7, "我的回答")
+
+    scored_history = [(m.sender_type, m.content) for m in agent.scored[0].history]
+    # 第一句是题干（发哪道题由出题引擎随机决定），随后才是本轮的问答；
+    # 题干现在也落进了对话记录，评分看到的上下文因此是完整的。
+    assert scored_history[0] == ("ai", repo.snapshots[0]["content_snapshot"])
+    assert scored_history[1:] == [("student", "我的回答"), ("ai", "说得挺完整。")]
+
+
+def test_the_question_prompt_is_written_into_the_transcript():
+    """发题时题干要落进对话记录。
+
+    否则「继续测评 / 刷新页面」只能从消息表还原现场，学生看到一堆回答和追问，
+    却看不到自己答的是哪道题。
+    """
+    repo = FakeRepo([question(11), question(12)])
+    flow = build_flow(FakeAgent(action=NEXT_QUESTION), repo)
+
+    run(flow, 1, 7, "")   # 开场：出第一道题
+
+    prompt = repo.messages[0]
+    assert prompt["sender_type"] == "ai"
+    assert prompt["content"] == repo.snapshots[0]["content_snapshot"]
+    assert prompt["assessment_question_id"] == repo.snapshots[0]["id"]
+
+
+def test_conversation_marks_the_prompt_and_the_answered_state():
+    """恢复现场：题干标成 questionPrompt，答完的题目标成已答完。"""
+    repo = FakeRepo([question(11), question(12)])
+    flow = build_flow(FakeAgent(action=NEXT_QUESTION), repo)
+    run(flow, 1, 7, "")             # 出第一道题
+    run(flow, 1, 7, "我的回答")      # 答完并换到第二道题
+
+    async def collect():
+        return await flow.conversation(1, 7)
+
+    data = anyio.run(collect)
+    prompts = [m for m in data["messages"] if m.get("questionPrompt")]
+    assert len(prompts) == 2                    # 两道题的题干都在记录里
+    assert prompts[0]["questionAnswered"] is True    # 第一题已答完
+    assert prompts[1]["questionAnswered"] is False   # 第二题正在问
+    assert data["question"]["content"] == prompts[1]["content"]
+
+
+def test_legacy_questions_without_a_prompt_message_still_show_the_question():
+    """历史数据没有题干消息（题干入消息表是后加的），恢复现场时要按快照补一条。
+
+    不补的话，老测评刷新后只剩学生回答和 AI 追问，看不到自己在答什么。
+    """
+    repo = FakeRepo([question(11), question(12)])
+    flow = build_flow(FakeAgent(action=NEXT_QUESTION), repo)
+    run(flow, 1, 7, "")             # 出第一道题（会写题干消息）
+    run(flow, 1, 7, "我的回答")      # 答完并换到第二道题
+    first_prompt = repo.snapshots[0]["content_snapshot"]
+    repo.messages = [m for m in repo.messages if m["content"] != first_prompt]  # 退回改造前
+
+    async def collect():
+        return await flow.conversation(1, 7)
+
+    data = anyio.run(collect)
+    prompts = [m for m in data["messages"] if m.get("questionPrompt")]
+    assert len(prompts) == 2
+    assert prompts[0]["content"] == first_prompt
+    assert prompts[0]["synthetic"] is True            # 第一题：快照补出来的
+    assert prompts[0]["questionAnswered"] is True
+    assert prompts[1].get("synthetic") is None        # 第二题：消息表里本来就有
+
+
 def test_a_skip_always_closes_the_topic_and_moves_on():
     """回归：学生说"不会 / 下一题"，这一回合必须真的关题并出下一题。
 

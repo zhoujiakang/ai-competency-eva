@@ -8,10 +8,19 @@
 发题快照、对话记忆、评分结果全部由本服务落库，Java 不再参与测评过程。
 """
 
+import asyncio
 import json
 from typing import Any
 
+import aiomysql
+
 from app.db.pool import Database
+
+# 可以安全重试的 MySQL 错误码：唯一键冲突（并发下两个回合算出同一个
+# sequence_no）、死锁、锁等待超时。重试时会重新算一次 MAX(sequence_no)，
+# 因此不会重复撞同一个号。
+RETRYABLE_MYSQL_ERRORS = frozenset({1062, 1213, 1205})
+MESSAGE_INSERT_ATTEMPTS = 3
 
 
 def load_list(value: Any) -> list[str]:
@@ -259,27 +268,47 @@ class AssessmentRepository:
             return await cursor.fetchall()
 
     async def append_message(self, assessment_id: int, record_id: int, sender_type: str, content: str) -> dict:
-        async with self._db.cursor() as cursor:
-            await cursor.execute(
-                "SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_no FROM assessment_messages WHERE assessment_question_id = %s",
-                (record_id,),
-            )
-            sequence_no = (await cursor.fetchone())["next_no"]
-            await cursor.execute(
-                """INSERT INTO assessment_messages
-                       (assessment_id, assessment_question_id, sender_type, content, sequence_no, created_at)
-                   VALUES (%s, %s, %s, %s, %s, NOW(3))""",
-                (assessment_id, record_id, sender_type, content, sequence_no),
-            )
-            message_id = int(cursor.lastrowid)
+        """写一条对话记忆。
+
+        序号在同一条 INSERT 里用 COALESCE(MAX(sequence_no),0)+1 算出来，
+        省掉改造前「先 SELECT MAX 再 INSERT」的第二次往返——每回合要写 2~3 条消息，
+        这条路径上的往返省下来是纯收益。
+
+        这条语句仍是「读-改-写」：两个并发回合可能算出同一个 sequence_no，
+        撞上 uk_message_sequence 后重试即可（重试会重新算号），不必加锁。
+
+        返回刚写入的内容供调用方维护本回合的内存历史；sequence_no 由数据库分配，
+        这里不必回读（需要序号的读取路径走 list_messages / list_question_messages）。
+        """
+        message_id = await self._insert_message(assessment_id, record_id, sender_type, content)
         return {
             "id": message_id,
-            "assessmentId": assessment_id,
-            "assessmentQuestionId": record_id,
-            "senderType": sender_type,
+            "assessment_id": assessment_id,
+            "assessment_question_id": record_id,
+            "sender_type": sender_type,
             "content": content,
-            "sequenceNo": sequence_no,
+            "sequence_no": None,
         }
+
+    async def _insert_message(self, assessment_id: int, record_id: int, sender_type: str, content: str) -> int:
+        for attempt in range(1, MESSAGE_INSERT_ATTEMPTS + 1):
+            try:
+                async with self._db.cursor() as cursor:
+                    await cursor.execute(
+                        """INSERT INTO assessment_messages
+                               (assessment_id, assessment_question_id, sender_type, content, sequence_no, created_at)
+                           SELECT %s, %s, %s, %s, COALESCE(MAX(sequence_no), 0) + 1, NOW(3)
+                             FROM assessment_messages
+                            WHERE assessment_question_id = %s""",
+                        (assessment_id, record_id, sender_type, content, record_id),
+                    )
+                    return int(cursor.lastrowid)
+            except (aiomysql.IntegrityError, aiomysql.OperationalError) as exc:
+                code = exc.args[0] if exc.args else None
+                if code not in RETRYABLE_MYSQL_ERRORS or attempt == MESSAGE_INSERT_ATTEMPTS:
+                    raise
+                await asyncio.sleep(0.01 * attempt)
+        raise RuntimeError("写入对话消息失败")  # 仅用于让类型检查器安心，循环内必定返回或抛出
 
     # ------------------------------------------------------------ 评分结果
     async def save_answer(

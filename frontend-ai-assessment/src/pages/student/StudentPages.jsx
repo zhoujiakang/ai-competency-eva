@@ -6,7 +6,7 @@ import { PageTitle } from "../../components/common";
 import { ErrorState, SkeletonList } from "../../components/Feedback";
 import { useSelectedClass } from "../../components/AbilityOverview";
 
-export function StudentClassesPage({ go, notify }) {
+export function StudentClassesPage({ notify }) {
   const [classes, setClasses] = useState([]);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -91,7 +91,7 @@ export function StudentClassesPage({ go, notify }) {
           <p>请向老师获取邀请码。</p>
           <div className="join-large">
             <input
-              placeholder="输入 6 位邀请码"
+              placeholder="输入 8 位邀请码"
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
@@ -235,7 +235,7 @@ export function StudentTasksPage({ go, notify }) {
   );
 }
 
-export function RecordsPage({ go, notify }) {
+export function RecordsPage({ go }) {
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -301,7 +301,8 @@ export function RecordsPage({ go, notify }) {
           ).map((item) => (
             <div className="record-row" key={item.id}>
               <div>
-                <h3>{item.taskId ? `测评任务 #${item.taskId}` : "自主测评"}</h3>
+                {/* 显示任务标题，不再把内部编号摆到学生面前 */}
+                <h3>{item.taskId ? item.taskTitle || "测评任务" : "自主测评"}</h3>
                 <p>创建于 {item.createdAt || "—"}</p>
               </div>
               <span className={`status ${item.status}`}>
@@ -361,7 +362,7 @@ export function ReportsPage({ go, notify }) {
     return () => {
       active = false;
     };
-  }, [classroom?.id]);
+  }, [classroom?.id, notify]);
 
   const isDone = (status) => status === "completed" || status === "completed_with_scoring_failure";
   const reports = items
@@ -449,7 +450,7 @@ export function ReportsPage({ go, notify }) {
           {visible.map((row) => (
             <div className="record-row" key={row.id}>
               <div>
-                <h3>{row.taskId ? `测评任务 #${row.taskId}` : "自主练习测评"}</h3>
+                <h3>{row.taskId ? row.taskTitle || "测评任务" : "自主练习测评"}</h3>
                 <p>
                   {row.kind} · 创建于 {String(row.createdAt || "").slice(0, 19) || "—"}
                 </p>

@@ -164,7 +164,7 @@ export function StudentDashboard({ user, go, notify }) {
         </div>
         <div className="empty-journey">
           <Clock3 size={22} />
-          <span>{activeRecord ? (activeRecord.taskId ? `测评任务 #${activeRecord.taskId} 正在进行中` : "练习测评正在进行中") : "暂无进行中的测评"}</span>
+          <span>{activeRecord ? (activeRecord.taskId ? `${activeRecord.taskTitle || "测评任务"} 正在进行中` : "练习测评正在进行中") : "暂无进行中的测评"}</span>
           <button className="outline" onClick={() => go(activeRecord ? "records" : "classes")}>
             {activeRecord ? "前往测评记录" : "查看可参加的测评"}
           </button>

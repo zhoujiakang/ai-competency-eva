@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   BookOpen,
   ClipboardList,
@@ -18,8 +18,6 @@ const EMPTY_FORM = {
   classId: "",
   title: "",
   description: "",
-  objective: "",
-  audience: "",
   estimatedDuration: 25,
   questionCount: 1,
   dimensions: [],
@@ -37,8 +35,9 @@ function Transcript({ questions }) {
         return (
           <section className="transcript-block" key={question.id}>
             <header>
+              {/* 题干一定会作为这道题的第一条 AI 消息出现在下面：新数据发题时就写进
+                  消息表，历史数据由后端按题目快照补一条。这里只留题号，避免显示两遍 */}
               <b>第 {question.sequenceNo} 题</b>
-              <span>{question.contentSnapshot}</span>
             </header>
             {(item.messages || []).map((message) => (
               <div className={`transcript-msg ${message.senderType}`} key={message.id}>
@@ -68,7 +67,7 @@ function StudentResultModal({ id, taskTitle, onClose, onBack, notify }) {
       .detail(id)
       .then(setData)
       .catch((error) => notify(error, "error"));
-  }, [id]);
+  }, [id, notify]);
 
   const student = data?.student;
   const questions = data?.questions || [];
@@ -158,7 +157,7 @@ export function TeacherTasksPage({ notify }) {
   // 指标要等好几个接口回来，先显示「—」而不是 0：否则老师会以为真的一题都没有
   const [metricsLoading, setMetricsLoading] = useState(true);
 
-  const load = () =>
+  const load = useCallback(() =>
     classApi
       .managed()
       .then(async (managedClasses) => {
@@ -204,12 +203,12 @@ export function TeacherTasksPage({ notify }) {
         });
       })
       .catch((error) => notify(error, "error"))
-      .finally(() => setMetricsLoading(false));
+      .finally(() => setMetricsLoading(false)), [notify]);
 
   useEffect(() => {
     load();
     questionApi.taxonomy().then(setTaxonomy).catch(() => {});
-  }, []);
+  }, [load]);
 
   // 选维度默认带上它下面的全部考察点；取消时把该维度的考察点一起去掉
   const toggleDimension = (dimension) => {
@@ -296,15 +295,15 @@ export function TeacherTasksPage({ notify }) {
           </label>
           <Field label="任务名称" required value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
           <label className="field">
-            <span>任务说明</span>
+            <span>介绍</span>
             <textarea
               value={form.description}
               onChange={(event) => setForm({ ...form, description: event.target.value })}
+              placeholder="一句话说明这次测评要做什么，学生会在任务列表里看到"
             />
+            <small className="field-hint">学生端任务列表里显示的就是这段话</small>
           </label>
           <div className="form-grid">
-            <Field label="目标" value={form.objective} onChange={(v) => setForm({ ...form, objective: v })} />
-            <Field label="适用对象" value={form.audience} onChange={(v) => setForm({ ...form, audience: v })} />
             <Field
               label="预计时长"
               type="number"
@@ -407,7 +406,8 @@ export function TeacherTasksPage({ notify }) {
               return (
                 <div className="mini-row" key={row.assessmentId}>
                   <span>
-                    {row.studentName || row.studentAccount || `学生 #${row.studentId}`}
+                    {/* 一律显示学生昵称，不再用内部 id 兜底 */}
+                    {row.studentNickname || row.studentName || row.studentAccount || "学生"}
                     {row.abilityLevel ? ` · ${row.abilityLevel}` : ""} ·{" "}
                     {done ? `已完成，${row.averageScore ?? row.totalScore ?? "—"} 分` : "进行中"}
                   </span>

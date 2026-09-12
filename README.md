@@ -49,7 +49,19 @@ nginx 配置里特意关掉了对 `/api/` 的响应缓冲（`proxy_buffering off
 `database.sql` 会在 MySQL **首次启动（数据卷为空）** 时自动建表，脚本可重复执行。
 系统不预置任何账号，第一次进去自己注册教师端账号即可。
 
-改过表结构后要让已有数据卷重新初始化，需要先删卷（会丢数据）：
+**改过表结构后先跑迁移，不要直接删卷。** `database.sql` 是幂等的：建表段落用
+`CREATE TABLE IF NOT EXISTS`，后面的 ALTER 段落按 `information_schema` 判断再执行，
+所以对已有库直接再跑一遍就是「补列 / 补索引」，数据不动：
+
+```bash
+# Docker 部署：在项目根目录，借容器里的 mysql 客户端执行（MySQL 没有对宿主机暴露端口）
+docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"' < database.sql
+
+# 或不用 Docker 的部署（脚本里已带 CREATE DATABASE / USE，不用指定库名）
+mysql -uroot -p < database.sql
+```
+
+只有在想要一份干净数据时才删卷（**会丢数据**）：
 
 ```bash
 docker compose down -v && docker compose up -d
@@ -89,6 +101,10 @@ SERVER=root@其他服务器 APP_DIR=/opt/xxx ./deploy/release.sh
 脚本做的事：构建并上传后端 jar、前端 `dist`、Agent 源码（依赖有变化才重装 venv），
 重启两个 systemd 服务，最后自检「应用首页 / 朋友的静态页 / 接口代理」三项。
 它不会碰 `/photoelectric/`，也不会覆盖服务器上的 `.env`。
+
+**发布带表结构变更的版本时**，先按上面的说明在服务器上跑一遍 `database.sql` 再重启
+后端：新版实体（比如 `users.phone` / `users.email`）会按列名查询，库里的列没补上
+会直接报错。`database.sql` 幂等，重复执行没有副作用。
 
 数据都在命名卷 `assessment-mysql` / `assessment-redis` 里，`down` 不会丢；
 `down -v` 才会删。备份用：
@@ -148,7 +164,7 @@ mysql -uroot -p < database.sql
 
 # 2) Python Agent
 cd agent-python
-python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt   # 只跑服务可装 requirements.txt
 cp .env.example .env          # 填 AGENT_SERVICE_TOKEN 与 DEEPSEEK_API_KEY
 ./.venv/bin/uvicorn main:app --reload --port 8090
 
@@ -170,5 +186,10 @@ cd frontend-ai-assessment && npm install && npm run dev -- --port 4174
 ## 测试
 
 ```bash
-cd agent-python && ./.venv/bin/python -m pytest tests -q
+./check.sh              # 三端：Agent 单测 + 后端单测 + 前端 lint 与生产构建（CI 跑的是同一份）
+./check.sh agent        # 也可以只跑某一段：agent / backend / frontend
 ```
+
+`./check.sh` 默认用 `agent-python/.venv`，依赖装在 `requirements-dev.txt`
+（生产镜像只装 `requirements.txt`，不带测试框架）。
+`deploy/release.sh` 打后端包时也会跑一遍后端单测，急着发版可加 `SKIP_TESTS=1` 跳过。

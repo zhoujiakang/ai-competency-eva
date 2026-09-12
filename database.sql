@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(80) NOT NULL,
   nickname VARCHAR(80),
+  -- 注册时选填的联系方式（手机号 11 位、邮箱），个人中心可修改
+  phone VARCHAR(32),
+  email VARCHAR(160),
   created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
@@ -46,7 +49,9 @@ CREATE TABLE IF NOT EXISTS questions (
   status VARCHAR(16) NOT NULL DEFAULT 'active',
   created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  INDEX idx_questions_owner_status(owner_user_id, status)
+  INDEX idx_questions_owner_status(owner_user_id, status),
+  -- 公共题库列表：WHERE visibility=? AND status=?
+  INDEX idx_questions_visibility_status(visibility, status)
 );
 
 CREATE TABLE IF NOT EXISTS classes (
@@ -67,7 +72,9 @@ CREATE TABLE IF NOT EXISTS class_members (
   joined_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   left_at TIMESTAMP(3),
   removed_at TIMESTAMP(3),
-  UNIQUE KEY uk_class_student(class_id, student_user_id)
+  UNIQUE KEY uk_class_student(class_id, student_user_id),
+  -- 学生端「我的班级」：WHERE student_user_id=? AND status=?（uk 以 class_id 打头，用不上）
+  INDEX idx_members_student_status(student_user_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS class_invite_codes (
@@ -96,8 +103,6 @@ CREATE TABLE IF NOT EXISTS assessment_tasks (
   teacher_user_id BIGINT NOT NULL,
   title VARCHAR(160) NOT NULL,
   description TEXT,
-  objective VARCHAR(255),
-  audience VARCHAR(255),
   estimated_duration INT,
   question_count INT NOT NULL DEFAULT 10,
   -- 教师发布任务时选定的考察范围（固定枚举值），学生开始该任务时继承
@@ -129,6 +134,8 @@ CREATE TABLE IF NOT EXISTS assessments (
   updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   INDEX idx_assessments_student_status(student_user_id, status),
   INDEX idx_assessments_class(class_id),
+  -- 能力画像：WHERE class_id=? AND student_user_id=? AND status IN (...) ORDER BY completed_at DESC
+  INDEX idx_assessments_class_student(class_id, student_user_id, status),
   UNIQUE KEY uk_assessment_task_student(task_id, student_user_id)
 );
 
@@ -161,7 +168,9 @@ CREATE TABLE IF NOT EXISTS assessment_messages (
   content TEXT NOT NULL,
   sequence_no INT NOT NULL,
   created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  UNIQUE KEY uk_message_sequence(assessment_question_id, sequence_no)
+  UNIQUE KEY uk_message_sequence(assessment_question_id, sequence_no),
+  -- 恢复现场 / 每个对话回合都要按 assessment_id 取整场消息；没有这个索引就是全表扫描
+  INDEX idx_messages_assessment(assessment_id, created_at)
 );
 
 CREATE TABLE IF NOT EXISTS assessment_answers (
@@ -301,3 +310,75 @@ CREATE TABLE IF NOT EXISTS student_class_profiles (
   UNIQUE KEY uk_class_student_profile(class_id, student_user_id),
   INDEX idx_profile_class(class_id)
 );
+
+-- 10) 性能索引补齐：都是最热路径上的查询条件，缺了就走全表扫描。
+--     老库直接执行这一段即可，已存在的索引会被跳过（幂等）。
+
+-- 10.1) 对话消息按测评取整场：恢复现场与每个对话回合都会用到。
+--       原表只有 uk_message_sequence(assessment_question_id, sequence_no)，条件里没有它就帮不上忙。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE assessment_messages ADD INDEX idx_messages_assessment(assessment_id, created_at)',
+  'DO 0')
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'assessment_messages' AND index_name = 'idx_messages_assessment');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 10.2) 学生端「我的班级」：WHERE student_user_id=? AND status=?
+--       uk_class_student 以 class_id 打头，这个查询用不上。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE class_members ADD INDEX idx_members_student_status(student_user_id, status)',
+  'DO 0')
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'class_members' AND index_name = 'idx_members_student_status');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 10.3) 能力画像取最近 N 次已完成测评：class_id + student_user_id + status + completed_at 排序。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE assessments ADD INDEX idx_assessments_class_student(class_id, student_user_id, status)',
+  'DO 0')
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'assessments' AND index_name = 'idx_assessments_class_student');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 10.4) 公共题库列表：WHERE visibility='public' AND status='active'。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE questions ADD INDEX idx_questions_visibility_status(visibility, status)',
+  'DO 0')
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'questions' AND index_name = 'idx_questions_visibility_status');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 11) 清掉 assessment_tasks 上的两个死列：objective / audience。
+--     教师发布任务时表单收过这两个字段，但从来没有落库（实体构造器不接收），
+--     也没有任何页面展示过；任务只保留一个 description 作为「介绍」。
+--     两列分开判断，避免其中一列已经被删掉时整条 ALTER 失败。
+SET @ddl := (SELECT IF(COUNT(*) > 0,
+  'ALTER TABLE assessment_tasks DROP COLUMN objective',
+  'DO 0')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'assessment_tasks' AND column_name = 'objective');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl := (SELECT IF(COUNT(*) > 0,
+  'ALTER TABLE assessment_tasks DROP COLUMN audience',
+  'DO 0')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'assessment_tasks' AND column_name = 'audience');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 12) 用户的联系方式：注册表单一直在收手机号 / 邮箱，但早期版本没有落库，
+--     用户填完看到「注册成功」数据却丢了。补上两列，个人中心同步可改。
+--     两列分开判断，避免其中一列已经存在时整条 ALTER 失败。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE users ADD COLUMN phone VARCHAR(32) NULL',
+  'DO 0')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'phone');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE users ADD COLUMN email VARCHAR(160) NULL',
+  'DO 0')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'email');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;

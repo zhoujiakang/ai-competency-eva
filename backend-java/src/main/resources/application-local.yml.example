@@ -15,3 +15,8 @@ app:
     api-key: ${AI_API_KEY:replace-with-your-deepseek-key}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     model: ${AI_MODEL:deepseek-chat}
+
+# 本机调试时才打开 SQL 日志；线上保持 INFO 即可，不要写进 application.yml。
+logging:
+  level:
+    com.huiqiyikang.assessment.mapper: DEBUG

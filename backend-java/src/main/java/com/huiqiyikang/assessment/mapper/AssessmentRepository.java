@@ -11,4 +11,6 @@ package com.huiqiyikang.assessment.mapper; import com.huiqiyikang.assessment.ent
  default Optional<Assessment> findLatestCompleted(Long classId,Long userId){return selectList(new QueryWrapper<Assessment>().eq("class_id",classId).eq("student_user_id",userId).in("status",COMPLETED_STATUSES).orderByDesc("completed_at").orderByDesc("id").last("LIMIT 1")).stream().findFirst();}
  /** 该学生在指定班级下最近 N 次已完成的测评，倒序（趋势曲线用）。 */
  default List<Assessment> findRecentCompleted(Long classId,Long userId,int limit){return selectList(new QueryWrapper<Assessment>().eq("class_id",classId).eq("student_user_id",userId).in("status",COMPLETED_STATUSES).orderByDesc("completed_at").orderByDesc("id").last("LIMIT " + Math.max(1, limit)));}
+ /** 一次取一个任务（或一组任务）下的全部测评，替代调用方把整张表读进内存再过滤。 */
+ default List<Assessment> findByTaskIdIn(Collection<Long> taskIds){return taskIds==null||taskIds.isEmpty()?List.of():selectList(new QueryWrapper<Assessment>().in("task_id",taskIds));}
 }

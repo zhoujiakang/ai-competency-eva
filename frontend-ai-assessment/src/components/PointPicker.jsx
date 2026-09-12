@@ -1,5 +1,5 @@
 import React from "react";
-import { findGroup, pointNames } from "../app/taxonomy";
+import { pointNames } from "../app/taxonomy";
 
 /**
  * 考察范围选择器（维度 / 考察点），三处共用：

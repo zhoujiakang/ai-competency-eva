@@ -293,6 +293,23 @@ p {
 .join-large input:focus {
   border-color: #111;
 }
+/* 表单里的多行输入：此前只有 input 有样式，textarea 一直是浏览器默认的窄小样子，
+   题目内容 / 选项 / 评分标准 / 任务介绍用的都是它。这里补成和单行输入一致的观感。 */
+.field textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 11px 12px;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.7;
+  outline: none;
+  resize: vertical;
+}
+.field textarea:focus {
+  border-color: #111;
+}
 .auth-foot {
   display: flex;
   justify-content: space-between;
@@ -752,6 +769,15 @@ td small {
    超过容器宽度，切换时看起来就是表格忽宽忽窄。 */
 .table-fixed {
   table-layout: fixed;
+}
+/* 固定列宽只约束了单元格的盒子，nowrap 的长文本仍会画到相邻列上——
+   维度标签一长就压住「类型」那一列。这里把溢出部分裁掉并显示省略号，
+   完整内容靠单元格上的 title 悬停查看。
+   不用自定义浮层：表格容器是 overflow:auto，浮层会被容器裁掉。 */
+.table-fixed th,
+.table-fixed td {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .table-fixed td:first-child {
   min-width: 0;
@@ -1643,6 +1669,8 @@ td small {
   color: #fff;
 }
 .field-hint {
+  display: block;
+  margin-top: 6px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -1692,10 +1720,6 @@ td small {
 .transcript-block header b {
   font-size: 12px;
   color: #8a7a52;
-}
-.transcript-block header span {
-  font-size: 13px;
-  color: #333;
 }
 .transcript-msg {
   display: grid;

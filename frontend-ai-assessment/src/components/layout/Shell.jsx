@@ -23,8 +23,10 @@ export function Shell({ role, user, screen, go, logout, notify, children }) {
       .joined()
       .then((items) => {
         setClasses(items);
+        // 这里读 storage 里的当前选择，而不是读 selectedClass 这个 state：
+        // 这个 effect 只该在角色变化时跑一次，把 state 写进依赖会让每次切换班级都重拉列表。
         const saved =
-          items.find((item) => item.id === selectedClass?.id) || items[0] || null;
+          items.find((item) => item.id === readSelectedClass()?.id) || items[0] || null;
         setSelectedClass(saved);
         writeSelectedClass(saved);
       })
@@ -33,7 +35,7 @@ export function Shell({ role, user, screen, go, logout, notify, children }) {
         setClasses([]);
         notify?.(error, "error");
       });
-  }, [role]);
+  }, [role, notify]);
 
   // 后端可达性：由 api 层的真实请求结果驱动，不再写死「系统运行中」
   useEffect(() => {

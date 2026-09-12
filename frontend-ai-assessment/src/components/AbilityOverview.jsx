@@ -65,7 +65,8 @@ export function useAbilityData(classroom, notify) {
     return () => {
       active = false;
     };
-  }, [classroom?.id, reloadKey]);
+    // notify 来自 App 且是 useCallback 稳定的，放进依赖不会造成重复拉取
+  }, [classroom?.id, reloadKey, notify]);
 
   const axes = taxonomy.map((group) => group.dimension);
   const scores = new Map(

@@ -11,6 +11,9 @@ public class User {
     private String passwordHash;
     private String name;
     private String nickname;
+    /** 注册时选填的联系方式；以前表单收过但没落库，现在是真实字段。 */
+    private String phone;
+    private String email;
     private Instant createdAt=Instant.now();
     private Instant updatedAt=Instant.now();
     public User(String username,String passwordHash,String name,String nickname){this.username=username;this.passwordHash=passwordHash;this.name=name;this.nickname=nickname;}

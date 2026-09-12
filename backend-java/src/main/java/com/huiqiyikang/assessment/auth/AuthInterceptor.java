@@ -12,7 +12,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         String uri = request.getRequestURI();
         // /api/auth/** 是登录注册本身；/api/client-logs 是前端错误上报——
         // 登录页出错时还没有令牌，所以这两个都必须放行。
-        if (uri.startsWith("/api/auth/") || uri.startsWith("/api/client-logs")
+        // 前缀匹配只用在 /api/auth/ 上；错误上报按全等匹配，避免以后新增
+        // /api/client-logs-xxx 这类路由时被一起放行。
+        if (uri.startsWith("/api/auth/") || uri.equals("/api/client-logs") || uri.equals("/api/client-logs/")
                 || "OPTIONS".equalsIgnoreCase(request.getMethod())) return true;
         StpUtil.checkLogin();
         return true;

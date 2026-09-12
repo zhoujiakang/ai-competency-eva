@@ -97,11 +97,19 @@ class AssessmentAgent:
                 queue.put_nowait(None)  # 结束哨兵：无论成功还是异常都要放
 
         task = asyncio.create_task(run_graph())
-        while True:
-            chunk = await queue.get()
-            if chunk is None:
-                break
-            yield "delta", chunk
+        # 消费者中途离开（浏览器断开、上层提前 return）时，生成器会被 close()，
+        # 这里必须把图的任务取消掉：否则它会继续跑模型，且异常没人取，
+        # 日志里会出现 "Task exception was never retrieved"。
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield "delta", chunk
 
-        final = await task  # 图里的异常在这里抛出，交给上层处理
+            final = await task  # 图里的异常在这里抛出，交给上层处理
+        except BaseException:
+            if not task.done():
+                task.cancel()
+            raise
         yield "done", self._to_response(final)

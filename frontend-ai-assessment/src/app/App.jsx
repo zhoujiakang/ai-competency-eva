@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { authApi } from "../services/api";
 import {
   clearSession,
@@ -10,7 +10,7 @@ import {
 } from "./storage";
 import { Landing } from "../components/layout/Landing";
 import { Shell } from "../components/layout/Shell";
-import { ToastHost } from "../components/Feedback";
+import { Loading, ToastHost } from "../components/Feedback";
 import { AuthPage } from "../pages/auth/AuthPage";
 import {
   StudentDashboard,
@@ -26,13 +26,24 @@ import {
   RecordsPage,
   ReportsPage,
 } from "../pages/student/StudentPages";
-import {
-  TeacherClassesPage,
-  TeacherQuestionsPage,
-  TeacherTasksPage,
-} from "../pages/teacher/TeacherPages";
 import { ProfilePage } from "../pages/account/AccountPages";
 import { StandardsPage } from "../components/AbilityOverview";
+
+/**
+ * 教师端三个页面单独成 chunk：学生端永远用不到，不该压进首屏包里。
+ *
+ * 三个入口指向同一个模块，构建后会合并成一个共用的异步 chunk，
+ * 所以第一次进任意教师页时下载的仍是同一份代码。
+ */
+const TeacherClassesPage = lazy(() =>
+  import("../pages/teacher/TeacherPages").then((m) => ({ default: m.TeacherClassesPage })),
+);
+const TeacherQuestionsPage = lazy(() =>
+  import("../pages/teacher/TeacherPages").then((m) => ({ default: m.TeacherQuestionsPage })),
+);
+const TeacherTasksPage = lazy(() =>
+  import("../pages/teacher/TeacherPages").then((m) => ({ default: m.TeacherTasksPage })),
+);
 
 export function App() {
   const [screen, setScreen] = useState(() =>
@@ -69,7 +80,8 @@ export function App() {
     );
   }, []);
 
-  const go = (nextScreen) => setScreen(nextScreen);
+  // 稳定引用：它会作为依赖传给页面级的 effect，每次渲染换新函数会让那些 effect 反复执行
+  const go = useCallback((nextScreen) => setScreen(nextScreen), []);
 
   const login = (nextUser, nextRole) => {
     setUser(nextUser);
@@ -144,7 +156,10 @@ export function App() {
         logout={logout}
         notify={notify}
       >
-        <Page screen={screen} role={role} user={user} go={go} notify={notify} />
+        {/* 懒加载页面在切换时先显示占位，避免白屏一瞬间 */}
+        <Suspense fallback={<Loading text="正在打开页面…" />}>
+          <Page screen={screen} role={role} user={user} go={go} notify={notify} />
+        </Suspense>
       </Shell>
     );
   }

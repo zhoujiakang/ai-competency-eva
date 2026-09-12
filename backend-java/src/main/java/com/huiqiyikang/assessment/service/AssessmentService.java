@@ -52,4 +52,8 @@ public class AssessmentService {
     public Optional<Question> findQuestionById(Long id){return questions.findById(id);}
     public AssessmentTask save(AssessmentTask x){return tasks.save(x);}
     public List<Assessment> findAll(){return assessments.findAll();}
+    // ---- 批量查询：列表接口一次把材料取齐，替代"每条再查一次"的 N+1 ----
+    public List<Assessment> findByTaskIdIn(Collection<Long> taskIds){return assessments.findByTaskIdIn(taskIds);}
+    public List<AssessmentQuestion> findAssessmentQuestionsByAssessmentIds(Collection<Long> assessmentIds){return assessmentQuestions.findByAssessmentIdIn(assessmentIds);}
+    public List<AssessmentMessage> findMessagesByQuestionIds(Collection<Long> questionIds){return messages.findByAssessmentQuestionIdIn(questionIds);}
 }

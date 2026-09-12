@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Database, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { classApi, questionApi } from "../../services/api";
 import { Field, Modal, PageTitle } from "../../components/common";
@@ -19,7 +19,8 @@ function ClassPanel({ item, notify }) {
   const [removeTarget, setRemoveTarget] = useState(null);
   const [removing, setRemoving] = useState(false);
 
-  const load = async () => {
+  // useCallback：它同时是挂载 effect 的依赖和「刷新数据」按钮的处理器，引用要稳定
+  const load = useCallback(async () => {
     try {
       const [classroom, memberList, classQuestions, myQuestions] = await Promise.all([
         classApi.detail(item.id),
@@ -34,11 +35,11 @@ function ClassPanel({ item, notify }) {
     } catch (error) {
       notify(error, "error");
     }
-  };
+  }, [item.id, notify]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const act = async (fn, message) => {
     try {
@@ -139,7 +140,9 @@ function ClassPanel({ item, notify }) {
           {members.length ? (
             members.map((member) => (
               <div className="mini-row" key={member.id}>
-                <span>学生 #{member.studentUserId}</span>
+                {/* 显示学生本人，不要把内部 id 露给老师看；
+                    昵称是注册时必填的，缺失时依次退回姓名、账号 */}
+                <span>{member.nickname || member.name || member.account || "学生"}</span>
                 <button
                   className="text-btn"
                   onClick={() => act(() => classApi.removeMember(item.id, member.studentUserId), "成员已移出")}
@@ -275,7 +278,8 @@ export function TeacherClassesPage({ notify }) {
   const [creating, setCreating] = useState(false);
 
   // 一次只展示一个班级：列表刷新后仍然停在原来选中的那个，它被删掉或首次加载才落到第一个
-  const load = async () => {
+  // useCallback：同上，挂载时拉一次，之后由「刷新」按钮复用
+  const load = useCallback(async () => {
     try {
       const list = await classApi.managed();
       setItems(list);
@@ -285,11 +289,11 @@ export function TeacherClassesPage({ notify }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [notify]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const create = async (event) => {
     event.preventDefault();

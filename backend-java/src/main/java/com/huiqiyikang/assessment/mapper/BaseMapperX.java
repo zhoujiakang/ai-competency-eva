@@ -1,6 +1,7 @@
 package com.huiqiyikang.assessment.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -8,6 +9,10 @@ import java.util.Optional;
 public interface BaseMapperX<T> extends BaseMapper<T> {
     default Optional<T> findById(Long id) { return Optional.ofNullable(selectById(id)); }
     default List<T> findAll() { return selectList(null); }
+    /** 按 id 批量取，用于消除"列表里每条再查一次"的 N+1；空集合直接返回空列表。 */
+    default List<T> findAllById(Collection<Long> ids) {
+        return ids == null || ids.isEmpty() ? List.of() : selectBatchIds(ids);
+    }
     default T save(T entity) {
         if (entity == null) return null;
         try {

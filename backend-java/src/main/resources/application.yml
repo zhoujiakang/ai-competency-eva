@@ -13,7 +13,10 @@ mybatis-plus:
   mapper-locations: classpath:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 刻意不写死 StdOutImpl：那会让线上每条 SQL 都格式化后打进 stdout，
+    # 既是无谓的 CPU 开销，也让容器日志迅速膨胀。默认交给 slf4j 按日志级别决定，
+    # 本机想看 SQL 就在 application-local.yml 里加：
+    #   logging.level.com.huiqiyikang.assessment.mapper: DEBUG
 sa-token:
   token-name: Authorization
   # 登录态有效期 30 天；存储在 Redis，重启后端不会掉线

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ArrowRight, Bot, Clock3 } from "lucide-react";
 import { PageTitle } from "../../components/common";
 import { RadarChart } from "../../components/charts";
@@ -18,10 +18,12 @@ export function AssessmentPage({ go, notify }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
 
-  const pushQuestion = (next) => setItems((previous) => [...previous, { kind: "question", id: `q-${next.id}`, text: next.content, answered: false }]);
+  const pushQuestion = useCallback((next) => setItems((previous) => [...previous, { kind: "question", id: `q-${next.id}`, text: next.content, answered: false }]), []);
 
   // 后端通过 SSE 告诉我们当前发生什么：题目、发言片段、某题问完、整场结束
-  const handleEvent = (aiId) => (name, payload) => {
+  // 用 useCallback 保持引用稳定：挂载 effect 与发送函数都依赖它，
+  // 每次渲染都换新函数会让「只跑一次」的 effect 变成反复执行。
+  const handleEvent = useCallback((aiId) => (name, payload) => {
     if (name === "delta") {
       setItems((previous) => previous.map((item) => item.id === aiId ? { ...item, text: `${item.text}${payload.text || ""}` } : item));
     } else if (name === "question") {
@@ -30,7 +32,7 @@ export function AssessmentPage({ go, notify }) {
     } else if (name === "answered") {
       setItems((previous) => previous.map((item) => item.id === `q-${payload.questionId}` ? { ...item, answered: true } : item));
     }
-  };
+  }, [pushQuestion]);
 
   useEffect(() => {
     if (!assessment) {
@@ -47,23 +49,46 @@ export function AssessmentPage({ go, notify }) {
           go("result");
           return;
         }
-        setItems((data.messages || []).map((message) => ({
-          kind: "message",
-          id: `m-${message.id}`,
-          from: message.senderType === "ai" ? "ai" : "student",
-          text: message.content,
-        })));
+        // 题干在发题时就写进了对话记录，后端用 questionPrompt 标出哪条是题干，
+        // 这里照原样还原成题目气泡（含「本题已答完」的淡化样式）。
+        // id 用 q-<题目记录 id>，和实时推送时 pushQuestion 的编号保持一致，
+        // 这样继续答题后收到 answered 事件，同一道题也能正确标记为已答完。
+        setItems((data.messages || []).map((message) => message.questionPrompt
+          ? {
+              kind: "question",
+              id: `q-${message.assessmentQuestionId}`,
+              text: message.content,
+              answered: Boolean(message.questionAnswered),
+            }
+          : {
+              kind: "message",
+              id: `m-${message.id}`,
+              from: message.senderType === "ai" ? "ai" : "student",
+              text: message.content,
+            }));
         setQuestion(data.question || null);
         setPlanned(Number(data.assessment?.questionCount) || 0);
-        // 还没有当前题目：让后端通过对话流给出第一道
-        if (!data.question) await assessmentApi.chat(assessment.id, "", handleEvent("opening"));
+        // 还没有当前题目：让后端通过对话流给出第一道，或者直接收尾。
+        // 这里的 finished 必须自己处理——上一轮 SSE 恰好在收尾那刻断掉时，
+        // 测评会停在「没有当前题目但仍是 in_progress」，不处理就会一直空着。
+        if (!data.question) {
+          let finished = false;
+          await assessmentApi.chat(assessment.id, "", (name, payload) => {
+            if (name === "finished") finished = true;
+            else handleEvent("opening")(name, payload);
+          });
+          if (finished) {
+            notify("测评已完成，正在打开结果", "success");
+            go("result");
+          }
+        }
       } catch (error) {
         removeCurrentAssessment();
         notify(`${error.message}，请返回工作台重新开始`, "error");
         go("dashboard");
       }
     })();
-  }, []);
+  }, [assessment, go, handleEvent, notify]);
 
   const send = async () => {
     if (!text.trim() || sending || !question) return;
@@ -153,11 +178,13 @@ export function AssessmentPage({ go, notify }) {
 export function ResultPage({ go }) {
   const [data, setData] = useState(null);
   const [taxonomy, setTaxonomy] = useState([]);
-  const assessment = readCurrentAssessment();
+  // 用 useState 固定下来：readCurrentAssessment() 每次调用都返回新对象，
+  // 直接参与依赖会让 effect 每渲染一轮就重拉一次结果。
+  const [assessment] = useState(readCurrentAssessment);
   useEffect(() => {
     if (assessment) assessmentApi.result(assessment.id).then(setData).catch(() => {});
     questionApi.taxonomy().then(setTaxonomy).catch(() => setTaxonomy([]));
-  }, []);
+  }, [assessment]);
 
   // 六维雷达图：轴取固定词表（6 个维度），分数取本次测评的维度分；
   // 本次没考到的维度按 0 分画并标注出来，避免被误读成「能力为 0」。

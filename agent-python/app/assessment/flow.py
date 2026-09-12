@@ -38,8 +38,8 @@ from app.assessment.rubrics import dialogue_rubric, scoring_rubric
 from app.assessment.views import (
     answer_view,
     assessment_view,
+    conversation_messages,
     dimension_view,
-    message_view,
     point_view,
     question_view,
     snapshot_view,
@@ -82,10 +82,16 @@ class AssessmentFlow:
         """恢复现场：整场对话 + 当前题目，前端刷新页面时用。"""
         assessment = await self._owned(assessment_id, student_user_id)
         messages = await self.repo.list_messages(assessment_id)
-        current = await self.repo.current_question(assessment_id)
+        questions = await self.repo.list_questions(assessment_id)
+        # 当前题目 = 最后一条还没答完的题；list_questions 已按 sequence_no 升序，
+        # 这样不必再多查一次 current_question。
+        pending = [row for row in questions if row["status"] != "answered"]
+        current = pending[-1] if pending else None
         return {
             "assessment": assessment_view(assessment),
-            "messages": [message_view(row) for row in messages],
+            # 题干在发题时就写进了消息表，这里连题目一起还原，
+            # 前端不用再自己拼「我问过什么」。
+            "messages": conversation_messages(messages, questions),
             "question": question_view(current) if current else None,
         }
 
@@ -126,25 +132,32 @@ class AssessmentFlow:
 
         if current is not None and text:
             await self.repo.append_message(assessment_id, current["id"], "student", text)
-            async for kind, payload in self.agent.stream(await self._dialogue_request(assessment, current)):
+            # 本题对话只取一次：发言用它渲染提示词，评分也用它，不再各查一遍。
+            # 本回合新写的消息按顺序补进这份内存列表，评分时看到的就是完整历史。
+            topic_history = await self.repo.list_question_messages(current["id"])
+            async for kind, payload in self.agent.stream(
+                    await self._dialogue_request(assessment, current, topic_history)):
                 if kind == "delta":
                     yield "delta", {"text": payload}
                     continue
                 reply = getattr(payload, "reply", "") or ""
                 action = getattr(payload, "action", ASK_FOLLOWUP) or ASK_FOLLOWUP
             if reply:
-                await self.repo.append_message(assessment_id, current["id"], "ai", reply)
+                saved = await self.repo.append_message(assessment_id, current["id"], "ai", reply)
+                topic_history.append(saved or {"sender_type": "ai", "content": reply})
             # 只有 agent 自己调用了 next_question，才结束本题；追问时题目原地不动。
             if action == NEXT_QUESTION:
-                yield "answered", await self._close_question(current)
+                yield "answered", await self._close_question(current, topic_history)
                 current = None
 
         if current is None:
             # 开场，或上一道题刚收尾：交给出题引擎决定换题还是收尾
-            decision = self.engine.decide(await self._context(assessment))
+            # 本场已出的题只查一次，出题决策与开新题快照共用。
+            questions = await self.repo.list_questions(assessment_id)
+            decision = self.engine.decide(await self._context(assessment, questions=questions))
             logger.debug("engine=%s action=%s reason=%s", self.engine.name, decision.action, decision.reason)
             if decision.action == "switch" and decision.question is not None:
-                record = await self._open_question(assessment, decision.question)
+                record = await self._open_question(assessment, decision.question, questions)
                 yield "question", question_view(record)
             else:
                 await self._finish(assessment)
@@ -172,8 +185,9 @@ class AssessmentFlow:
         return assessment
 
     async def _context(self, assessment: dict, current_question: Candidate | None = None,
-            current_question_finished: bool = True) -> EngineContext:
-        questions = await self.repo.list_questions(assessment["id"])
+            current_question_finished: bool = True, questions: list[dict] | None = None) -> EngineContext:
+        if questions is None:
+            questions = await self.repo.list_questions(assessment["id"])
         candidates = await self.repo.list_candidates(assessment["class_id"])
         task = await self.repo.get_task(assessment["task_id"]) if assessment.get("task_id") else None
         return EngineContext(
@@ -191,9 +205,14 @@ class AssessmentFlow:
             completed_count=sum(1 for q in questions if q["status"] == "answered"),
         )
 
-    async def _open_question(self, assessment: dict, candidate: Candidate) -> dict:
+    async def _open_question(self, assessment: dict, candidate: Candidate,
+            existing_questions: list[dict] | None = None) -> dict:
         """把引擎选中的题冻结成快照，返回这条快照。"""
-        questions = await self.repo.list_questions(assessment["id"])
+        questions = (
+            existing_questions
+            if existing_questions is not None
+            else await self.repo.list_questions(assessment["id"])
+        )
         await self.repo.save_question_snapshot(
             assessment["id"],
             {
@@ -212,12 +231,22 @@ class AssessmentFlow:
         record = await self.repo.current_question(assessment["id"])
         if record is None:
             raise RuntimeError("发题快照写入失败")
+        # 题干同时写进对话记录，作为这道题的第一条消息。
+        # 不写的话「继续测评 / 刷新页面」时只能从消息表还原现场，
+        # 学生看到的就是一堆回答和追问，却看不到自己答的是哪道题。
+        await self.repo.append_message(
+            assessment["id"], int(record["id"]), "ai", record["content_snapshot"]
+        )
         return record
 
-    async def _close_question(self, question: dict) -> dict:
-        """一道题问完了：按快照里的评分标准打分，写答案。"""
+    async def _close_question(self, question: dict, history: list[dict] | None = None) -> dict:
+        """一道题问完了：按快照里的评分标准打分，写答案。
+
+        history 由调用方传入时直接用，避免本回合刚读过一次又重读一遍。
+        """
         record_id = int(question["id"])
-        history = await self.repo.list_question_messages(record_id)
+        if history is None:
+            history = await self.repo.list_question_messages(record_id)
         student_messages = [m for m in history if m["sender_type"] == "student"]
         answer_content = student_messages[-1]["content"] if student_messages else f"conversation:{len(history)}"
         score: dict | None = None
@@ -285,9 +314,11 @@ class AssessmentFlow:
             aggregation.level.level,
         )
 
-    async def _dialogue_request(self, assessment: dict, question: dict) -> DialogueRequest:
+    async def _dialogue_request(self, assessment: dict, question: dict,
+            topic_history: list[dict] | None = None) -> DialogueRequest:
         history = await self.repo.list_messages(assessment["id"])
-        topic_history = await self.repo.list_question_messages(question["id"])
+        if topic_history is None:
+            topic_history = await self.repo.list_question_messages(question["id"])
         return DialogueRequest(
             topic=question["content_snapshot"],
             rubric=dialogue_rubric(question),

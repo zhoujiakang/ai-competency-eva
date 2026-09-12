@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Copy, Eye, Plus } from "lucide-react";
 import { questionApi } from "../../services/api";
 import { Modal, PageTitle } from "../../components/common";
@@ -24,12 +24,12 @@ export function TeacherQuestionsPage({ notify }) {
   // 正在处理的那一行：按钮禁用 + 文案变化，避免连点重复提交
   const [busyId, setBusyId] = useState(null);
 
-  const load = () =>
+  const load = useCallback(() =>
     questionApi
       .list()
       .then((rows) => setItems(rows || []))
       .catch((e) => notify(e, "error"))
-      .finally(() => setLoading(false));
+      .finally(() => setLoading(false)), [notify]);
 
   useEffect(() => {
     load();
@@ -39,7 +39,7 @@ export function TeacherQuestionsPage({ notify }) {
         setTaxonomy(tax);
       })
       .catch((e) => notify(e, "error"));
-  }, []);
+  }, [load, notify]);
 
   const operate = async (fn, id) => {
     if (busyId) return;
@@ -160,11 +160,11 @@ export function TeacherQuestionsPage({ notify }) {
         <div className="table-wrap">
           <table className="table-fixed">
             <colgroup>
-              <col style={{ width: "46%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "36%" }} />
+              <col style={{ width: "19%" }} />
               <col style={{ width: "12%" }} />
               <col style={{ width: "9%" }} />
-              <col style={{ width: "18%" }} />
+              <col style={{ width: "24%" }} />
             </colgroup>
             <thead>
               <tr>
@@ -176,24 +176,28 @@ export function TeacherQuestionsPage({ notify }) {
               </tr>
             </thead>
             <tbody>
-              {publicItems.map((q) => (
-                <tr key={q.id}>
-                  <td>{q.title}</td>
-                  <td>{questionDimensionLabel(q)}</td>
-                  <td>{q.type}</td>
-                  <td>{q.score ?? 0} 分</td>
-                  <td>
-                    <button
-                      className="outline"
-                      onClick={() => operate(questionApi.copyPublic, q.id)}
-                      disabled={busyId === q.id}
-                    >
-                      <Copy size={14} />
-                      {busyId === q.id ? "复制中…" : "复制到我的题库"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {publicItems.map((q) => {
+                const dimension = questionDimensionLabel(q);
+                return (
+                  <tr key={q.id}>
+                    {/* 单元格会被裁成省略号，完整内容靠 title 悬停查看 */}
+                    <td title={q.title}>{q.title}</td>
+                    <td title={dimension}>{dimension}</td>
+                    <td>{q.type}</td>
+                    <td>{q.score ?? 0} 分</td>
+                    <td>
+                      <button
+                        className="outline"
+                        onClick={() => operate(questionApi.copyPublic, q.id)}
+                        disabled={busyId === q.id}
+                      >
+                        <Copy size={14} />
+                        {busyId === q.id ? "复制中…" : "复制到我的题库"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -201,12 +205,12 @@ export function TeacherQuestionsPage({ notify }) {
         <div className="table-wrap">
           <table className="table-fixed">
             <colgroup>
-              <col style={{ width: "32%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "9%" }} />
               <col style={{ width: "27%" }} />
+              <col style={{ width: "19%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "24%" }} />
             </colgroup>
             <thead>
               <tr>
@@ -219,57 +223,61 @@ export function TeacherQuestionsPage({ notify }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((q) => (
-                <tr key={q.id}>
-                  <td>
-                    <strong>{q.title}</strong>
-                    <small>{q.content}</small>
-                  </td>
-                  <td>{questionDimensionLabel(q)}</td>
-                  <td>{q.type}</td>
-                  <td>{q.score ?? 0} 分</td>
-                  <td>
-                    {q.status === "offline" ? "已下线" : q.visibility === "public" ? "公开" : "私有"}
-                  </td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="text-btn" onClick={() => startEdit(q)}>
-                        编辑
-                      </button>
-                      {q.visibility === "public" ? (
-                        <button
-                          className="text-btn"
-                          onClick={() => operate(questionApi.unpublish, q.id)}
-                          disabled={busyId === q.id}
-                        >
-                          转私有
+              {items.map((q) => {
+                const dimension = questionDimensionLabel(q);
+                return (
+                  <tr key={q.id}>
+                    {/* 单元格会被裁成省略号，完整内容靠 title 悬停查看 */}
+                    <td>
+                      <strong title={q.title}>{q.title}</strong>
+                      <small title={q.content}>{q.content}</small>
+                    </td>
+                    <td title={dimension}>{dimension}</td>
+                    <td>{q.type}</td>
+                    <td>{q.score ?? 0} 分</td>
+                    <td>
+                      {q.status === "offline" ? "已下线" : q.visibility === "public" ? "公开" : "私有"}
+                    </td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="text-btn" onClick={() => startEdit(q)}>
+                          编辑
                         </button>
-                      ) : (
-                        <button
-                          className="text-btn"
-                          onClick={() => operate(questionApi.publish, q.id)}
-                          disabled={busyId === q.id}
-                        >
-                          公开
-                        </button>
-                      )}
-                      {q.status === "offline" ? (
-                        <button
-                          className="text-btn"
-                          onClick={() => operate(questionApi.restore, q.id)}
-                          disabled={busyId === q.id}
-                        >
-                          恢复
-                        </button>
-                      ) : (
-                        <button className="text-btn" onClick={() => setOfflineTarget(q)}>
-                          下线
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {q.visibility === "public" ? (
+                          <button
+                            className="text-btn"
+                            onClick={() => operate(questionApi.unpublish, q.id)}
+                            disabled={busyId === q.id}
+                          >
+                            转私有
+                          </button>
+                        ) : (
+                          <button
+                            className="text-btn"
+                            onClick={() => operate(questionApi.publish, q.id)}
+                            disabled={busyId === q.id}
+                          >
+                            公开
+                          </button>
+                        )}
+                        {q.status === "offline" ? (
+                          <button
+                            className="text-btn"
+                            onClick={() => operate(questionApi.restore, q.id)}
+                            disabled={busyId === q.id}
+                          >
+                            恢复
+                          </button>
+                        ) : (
+                          <button className="text-btn" onClick={() => setOfflineTarget(q)}>
+                            下线
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
